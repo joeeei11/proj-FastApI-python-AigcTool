@@ -145,18 +145,34 @@ def _migrate_database_schema():
                 # 迁移 users 表
                 if "users" in tables:
                     user_columns = {column["name"] for column in inspector.get_columns("users")}
-                    
+
                     if "usage_limit" not in user_columns:
-                        if _add_column_safely(conn, "users", "usage_limit", f"INTEGER DEFAULT {settings.DEFAULT_USAGE_LIMIT}"):
+                        if _add_column_safely(conn, "users", "usage_limit", "INTEGER DEFAULT 0"):
                             print("  ✓ 添加字段: users.usage_limit")
-                    
+
                     if "usage_count" not in user_columns:
                         if _add_column_safely(conn, "users", "usage_count", "INTEGER DEFAULT 0"):
                             print("  ✓ 添加字段: users.usage_count")
-                    
+
+                    if "username" not in user_columns:
+                        if _add_column_safely(conn, "users", "username", "VARCHAR(50)"):
+                            print("  ✓ 添加字段: users.username")
+
+                    if "password_hash" not in user_columns:
+                        if _add_column_safely(conn, "users", "password_hash", "VARCHAR(255)"):
+                            print("  ✓ 添加字段: users.password_hash")
+
+                    if "email" not in user_columns:
+                        if _add_column_safely(conn, "users", "email", "VARCHAR(100)"):
+                            print("  ✓ 添加字段: users.email")
+
+                    if "last_login" not in user_columns:
+                        if _add_column_safely(conn, "users", "last_login", "DATETIME"):
+                            print("  ✓ 添加字段: users.last_login")
+
                     # 更新 NULL 值
                     try:
-                        conn.execute(text(f"UPDATE users SET usage_limit = {settings.DEFAULT_USAGE_LIMIT} WHERE usage_limit IS NULL"))
+                        conn.execute(text("UPDATE users SET usage_limit = 0 WHERE usage_limit IS NULL"))
                         conn.execute(text("UPDATE users SET usage_count = 0 WHERE usage_count IS NULL"))
                         conn.commit()
                     except Exception:
@@ -170,6 +186,30 @@ def _migrate_database_schema():
                         if _add_column_safely(conn, "optimization_segments", "is_title", "BOOLEAN DEFAULT 0"):
                             print("  ✓ 添加字段: optimization_segments.is_title")
             
+                # 迁移 coupons 表
+                if "coupons" in tables:
+                    coupon_columns = {column["name"] for column in inspector.get_columns("coupons")}
+                    if "used_count" not in coupon_columns:
+                        if _add_column_safely(conn, "coupons", "used_count", "INTEGER DEFAULT 0"):
+                            print("  ✓ 添加字段: coupons.used_count")
+                    if "credits" not in coupon_columns:
+                        if _add_column_safely(conn, "coupons", "credits", "INTEGER DEFAULT 10"):
+                            print("  ✓ 添加字段: coupons.credits")
+                        # 将旧 total_uses 数据迁移到 credits
+                        try:
+                            conn.execute(text(
+                                "UPDATE coupons SET credits = total_uses WHERE credits IS NULL OR credits = 0"
+                            ))
+                            conn.commit()
+                        except Exception:
+                            conn.rollback()
+                    if "max_redemptions" not in coupon_columns:
+                        if _add_column_safely(conn, "coupons", "max_redemptions", "INTEGER DEFAULT 0"):
+                            print("  ✓ 添加字段: coupons.max_redemptions")
+                    if "expires_at" not in coupon_columns:
+                        if _add_column_safely(conn, "coupons", "expires_at", "DATETIME"):
+                            print("  ✓ 添加字段: coupons.expires_at")
+
                 # 迁移 custom_prompts 表
                 if "custom_prompts" in tables:
                     prompt_columns = {column["name"] for column in inspector.get_columns("custom_prompts")}

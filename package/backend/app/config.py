@@ -83,7 +83,7 @@ class Settings(BaseSettings):
     # JWT 密钥
     SECRET_KEY: str = "your-secret-key-change-this-in-production"
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440  # 24小时
     
     # 管理员账户
     ADMIN_USERNAME: str = "admin"

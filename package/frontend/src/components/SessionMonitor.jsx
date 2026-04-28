@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
-import { Activity, RefreshCw, Clock, User, FileText, TrendingUp, BarChart3, Zap, History, Square } from 'lucide-react';
+import { Activity, RefreshCw, Clock, User, FileText, TrendingUp, BarChart3, Zap, History, Square, Eye, XCircle } from 'lucide-react';
 import { adminAPI } from '../api';
 
 const SessionMonitor = ({ adminToken }) => {
@@ -12,6 +12,9 @@ const SessionMonitor = ({ adminToken }) => {
   const [selectedUser, setSelectedUser] = useState(null);
   const [userSessions, setUserSessions] = useState([]);
   const [viewMode, setViewMode] = useState('active'); // 'active' or 'history'
+  const [sessionDetail, setSessionDetail] = useState(null);
+  const [loadingDetail, setLoadingDetail] = useState(false);
+  const [detailTab, setDetailTab] = useState('polish'); // 'polish' or 'enhance'
 
   useEffect(() => {
     if (viewMode === 'active') {
@@ -25,6 +28,24 @@ const SessionMonitor = ({ adminToken }) => {
       fetchHistorySessions();
     }
   }, [autoRefresh, viewMode]);
+
+  const fetchSessionDetail = async (sessionId) => {
+    setLoadingDetail(true);
+    try {
+      const response = await adminAPI.getAdminSessionDetail(sessionId);
+      setSessionDetail(response.data);
+      const mode = response.data.processing_mode || '';
+      if (mode.includes('enhance')) {
+        setDetailTab('enhance');
+      } else {
+        setDetailTab('polish');
+      }
+    } catch (error) {
+      toast.error('获取会话详情失败');
+    } finally {
+      setLoadingDetail(false);
+    }
+  };
 
   const handleStopSession = async (sessionId) => {
     if (!window.confirm('确定要强制停止该会话吗？')) {
@@ -385,23 +406,32 @@ const SessionMonitor = ({ adminToken }) => {
                   </div>
                 )}
 
-                <div className="flex items-center gap-4 text-xs text-gray-500 flex-wrap">
-                  <span className="flex items-center gap-1">
-                    <Clock className="w-3 h-3" />
-                    {new Date(session.created_at).toLocaleString('zh-CN')}
-                  </span>
-                  {session.processing_time && (
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-4 text-xs text-gray-500 flex-wrap">
                     <span className="flex items-center gap-1">
-                      <Zap className="w-3 h-3" />
-                      耗时: {formatDuration(session.processing_time)}
+                      <Clock className="w-3 h-3" />
+                      {new Date(session.created_at).toLocaleString('zh-CN')}
                     </span>
-                  )}
-                  {session.completed_at && (
-                    <span>完成: {new Date(session.completed_at).toLocaleString('zh-CN')}</span>
-                  )}
-                  {session.error_message && (
-                    <span className="text-red-600">错误: {session.error_message}</span>
-                  )}
+                    {session.processing_time && (
+                      <span className="flex items-center gap-1">
+                        <Zap className="w-3 h-3" />
+                        耗时: {formatDuration(session.processing_time)}
+                      </span>
+                    )}
+                    {session.completed_at && (
+                      <span>完成: {new Date(session.completed_at).toLocaleString('zh-CN')}</span>
+                    )}
+                    {session.error_message && (
+                      <span className="text-red-600">错误: {session.error_message}</span>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => fetchSessionDetail(session.session_id || session.id)}
+                    className="flex items-center gap-1 px-3 py-1 bg-gray-100 hover:bg-blue-100 hover:text-blue-700 text-gray-600 rounded-lg transition-colors text-xs font-medium"
+                  >
+                    <Eye className="w-3.5 h-3.5" />
+                    查看详情
+                  </button>
                 </div>
               </div>
             ))}
@@ -527,25 +557,150 @@ const SessionMonitor = ({ adminToken }) => {
                       </div>
                     )}
 
-                    <div className="flex items-center gap-6 text-xs text-gray-600">
-                      <span className="flex items-center gap-1">
-                        <FileText className="w-3 h-3" />
-                        分段: {session.completed_segments || 0}/{session.total_segments || 0}
-                      </span>
-                      {session.processing_time && (
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <div className="flex items-center gap-6 text-xs text-gray-600">
                         <span className="flex items-center gap-1">
-                          <Zap className="w-3 h-3" />
-                          耗时: {formatDuration(session.processing_time)}
+                          <FileText className="w-3 h-3" />
+                          分段: {session.completed_segments || 0}/{session.total_segments || 0}
                         </span>
-                      )}
-                      {session.completed_at && (
-                        <span>完成: {new Date(session.completed_at).toLocaleString('zh-CN')}</span>
-                      )}
+                        {session.processing_time && (
+                          <span className="flex items-center gap-1">
+                            <Zap className="w-3 h-3" />
+                            耗时: {formatDuration(session.processing_time)}
+                          </span>
+                        )}
+                        {session.completed_at && (
+                          <span>完成: {new Date(session.completed_at).toLocaleString('zh-CN')}</span>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => fetchSessionDetail(session.id)}
+                        className="flex items-center gap-1 px-3 py-1 bg-gray-100 hover:bg-blue-100 hover:text-blue-700 text-gray-600 rounded-lg transition-colors text-xs font-medium"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        查看详情
+                      </button>
                     </div>
                   </div>
                 ))}
               </div>
             )}
+          </div>
+        </div>
+      )}
+      {/* 会话详情弹窗 */}
+      {sessionDetail && (
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[60] p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col">
+            {/* 头部 */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 flex-shrink-0">
+              <div>
+                <h3 className="text-lg font-bold text-gray-900">会话详情</h3>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {sessionDetail.card_key} · ID: {sessionDetail.id} ·{' '}
+                  {sessionDetail.processing_mode === 'paper_polish' ? '论文润色' :
+                   sessionDetail.processing_mode === 'paper_enhance' ? '论文增强' :
+                   sessionDetail.processing_mode === 'paper_polish_enhance' ? '论文润色+增强' :
+                   sessionDetail.processing_mode === 'emotion_polish' ? '感情文章润色' :
+                   sessionDetail.processing_mode}
+                </p>
+              </div>
+              <button onClick={() => setSessionDetail(null)} className="text-gray-400 hover:text-gray-600 p-1">
+                <XCircle className="w-6 h-6" />
+              </button>
+            </div>
+
+            {/* 元信息行 */}
+            <div className="px-6 py-3 bg-gray-50 border-b border-gray-100 flex items-center gap-6 text-xs text-gray-600 flex-shrink-0 flex-wrap">
+              <span className={`px-2 py-0.5 rounded-full font-medium ${
+                sessionDetail.status === 'completed' ? 'bg-green-100 text-green-700' :
+                sessionDetail.status === 'failed' ? 'bg-red-100 text-red-700' :
+                sessionDetail.status === 'processing' ? 'bg-blue-100 text-blue-700' :
+                'bg-gray-100 text-gray-700'
+              }`}>{getStatusText(sessionDetail.status)}</span>
+              <span><Clock className="w-3 h-3 inline mr-1" />{new Date(sessionDetail.created_at).toLocaleString('zh-CN')}</span>
+              {sessionDetail.processing_time && (
+                <span><Zap className="w-3 h-3 inline mr-1" />耗时 {formatDuration(sessionDetail.processing_time)}</span>
+              )}
+              <span>段落: {sessionDetail.segments?.length || 0}</span>
+              {sessionDetail.error_message && (
+                <span className="text-red-600">错误: {sessionDetail.error_message}</span>
+              )}
+            </div>
+
+            {/* 标签页切换 */}
+            <div className="px-6 pt-3 flex gap-1 flex-shrink-0 border-b border-gray-100">
+              {['polish', 'enhance', 'original'].map((tab) => {
+                const labels = { polish: '润色结果', enhance: '增强结果', original: '原始文本' };
+                const hasData = tab === 'original'
+                  ? !!sessionDetail.original_text
+                  : sessionDetail.segments?.some(s => s[tab === 'polish' ? 'polished_text' : 'enhanced_text']);
+                if (!hasData && tab !== 'original') return null;
+                return (
+                  <button
+                    key={tab}
+                    onClick={() => setDetailTab(tab)}
+                    className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-colors ${
+                      detailTab === tab
+                        ? 'bg-blue-600 text-white'
+                        : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                    }`}
+                  >
+                    {labels[tab]}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* 内容区 */}
+            <div className="flex-1 overflow-y-auto px-6 py-4">
+              {loadingDetail ? (
+                <div className="flex items-center justify-center py-20">
+                  <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                </div>
+              ) : detailTab === 'original' ? (
+                <pre className="whitespace-pre-wrap text-sm text-gray-700 leading-relaxed font-sans">
+                  {sessionDetail.original_text || '（无原始文本）'}
+                </pre>
+              ) : (
+                <div className="space-y-4">
+                  {(sessionDetail.segments || [])
+                    .filter(seg => seg[detailTab === 'polish' ? 'polished_text' : 'enhanced_text'])
+                    .map((seg) => {
+                      const resultText = seg[detailTab === 'polish' ? 'polished_text' : 'enhanced_text'];
+                      return (
+                        <div key={seg.id} className="border border-gray-200 rounded-lg overflow-hidden">
+                          <div className="bg-gray-50 px-4 py-2 flex items-center gap-3 text-xs text-gray-500 border-b border-gray-200">
+                            <span className="font-medium">段落 {seg.segment_index + 1}</span>
+                            {seg.is_title && <span className="px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded">标题</span>}
+                            <span className={`px-1.5 py-0.5 rounded ${seg.status === 'completed' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
+                              {seg.status === 'completed' ? '完成' : seg.status}
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-2 divide-x divide-gray-200">
+                            <div className="p-4">
+                              <p className="text-xs font-medium text-gray-400 mb-2">原文</p>
+                              <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{seg.original_text}</p>
+                            </div>
+                            <div className="p-4">
+                              <p className="text-xs font-medium text-blue-500 mb-2">
+                                {detailTab === 'polish' ? '润色结果' : '增强结果'}
+                              </p>
+                              <p className="text-sm text-gray-900 whitespace-pre-wrap leading-relaxed">{resultText}</p>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  {(sessionDetail.segments || []).filter(seg => seg[detailTab === 'polish' ? 'polished_text' : 'enhanced_text']).length === 0 && (
+                    <div className="text-center py-16 text-gray-400">
+                      <FileText className="w-10 h-10 mx-auto mb-2 opacity-30" />
+                      <p className="text-sm">暂无{detailTab === 'polish' ? '润色' : '增强'}结果</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}

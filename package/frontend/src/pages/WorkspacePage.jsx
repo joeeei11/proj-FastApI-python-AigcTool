@@ -1,545 +1,413 @@
 import React, { useState, useEffect, useCallback, useMemo, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import {
-  FileText, History, LogOut, Play,
-  Users, Clock, AlertCircle, CheckCircle, Trash2, Info
-} from 'lucide-react';
+import { Play, History, AlertCircle, CheckCircle, Trash2, RefreshCw, ChevronRight, Layers, Paperclip } from 'lucide-react';
 import { optimizationAPI } from '../api';
+import { useAuth } from '../auth/AuthContext';
+import AnnouncementBell from '../components/AnnouncementBell';
+import { useRef } from 'react';
 
-// 会话列表项组件 - 使用 memo 避免不必要重渲染
-const SessionItem = memo(({ session, activeSession, onView, onDelete, onRetry }) => {
-  const handleDelete = useCallback((e) => {
-    e.stopPropagation();
-    onDelete(session);
-  }, [session, onDelete]);
+const STATUS = {
+  completed: { label: '已完成', badge: 'badge-o-green' },
+  processing: { label: '处理中', badge: 'badge-o-warm' },
+  queued:     { label: '排队中', badge: 'badge-o-gray' },
+  failed:     { label: '失败',   badge: 'badge-o-red' },
+  stopped:    { label: '已停止', badge: 'badge-o-gray' },
+};
 
-  const handleRetry = useCallback((e) => {
-    e.stopPropagation();
-    if (session.status === 'failed') {
-      onRetry(session);
-    }
-  }, [session, onRetry]);
+const MODES = [
+  { id: 'paper_polish_enhance', label: '润色 + 增强', desc: '两阶段完整处理' },
+  { id: 'paper_polish',         label: '论文润色',   desc: '提升学术表达质量' },
+  { id: 'paper_enhance',        label: '原创增强',   desc: '直接提升原创性' },
+  { id: 'emotion_polish',       label: '感情文章',   desc: '自然人性化表达' },
+];
 
-  const handleView = useCallback(() => {
-    onView(session.session_id);
-  }, [session.session_id, onView]);
+const STAGE = { polish: '润色阶段', emotion_polish: '感情润色', enhance: '增强阶段' };
 
+const SessionItem = memo(({ session, onView, onDelete, onRetry }) => {
+  const s = STATUS[session.status] || STATUS.queued;
   return (
     <div
-      onClick={handleView}
-      className="group p-3 rounded-xl hover:bg-gray-50 transition-all cursor-pointer border border-transparent hover:border-gray-100 relative"
+      onClick={() => onView(session.session_id)}
+      style={{
+        padding: '0.875rem 1rem',
+        cursor: 'pointer',
+        borderBottom: '1px solid rgba(140,120,96,0.1)',
+        transition: 'background 200ms ease',
+      }}
+      onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,250,243,0.7)'}
+      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
     >
-      <div className="flex items-start justify-between mb-1.5 gap-2">
-        <div className="flex items-center gap-1.5">
-          {session.status === 'completed' && (
-            <CheckCircle className="w-4 h-4 text-ios-green" />
-          )}
-          {session.status === 'processing' && (
-            <div className="w-4 h-4 border-2 border-ios-blue border-t-transparent rounded-full animate-spin" />
-          )}
-          {session.status === 'failed' && (
-            <AlertCircle className="w-4 h-4 text-ios-red" />
-          )}
-          {session.status === 'stopped' && (
-            <AlertCircle className="w-4 h-4 text-orange-500" />
-          )}
-          <span className={`text-[13px] font-medium ${
-            session.status === 'completed' ? 'text-black' :
-            session.status === 'processing' ? 'text-ios-blue' :
-            session.status === 'failed' ? 'text-ios-red' :
-            session.status === 'stopped' ? 'text-orange-600' : 'text-ios-gray'
-          }`}>
-            {session.status === 'completed' && '已完成'}
-            {session.status === 'processing' && '处理中'}
-            {session.status === 'queued' && '排队中'}
-            {session.status === 'failed' && '失败'}
-            {session.status === 'stopped' && '已停止'}
-          </span>
-        </div>
-
-        <span className="text-[11px] text-ios-gray/70 font-medium">
-          {new Date(session.created_at).toLocaleDateString()}
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'0.4rem' }}>
+        <span className={s.badge} style={{ fontSize:'0.75rem' }}>{s.label}</span>
+        <span style={{ fontSize:'0.75rem', color:'var(--ink-soft)', opacity:0.7 }}>
+          {new Date(session.created_at).toLocaleDateString('zh-CN')}
         </span>
       </div>
-
-      <p className="text-[13px] text-ios-gray leading-snug line-clamp-2 mb-2 pr-6">
+      <p style={{ margin:'0 0 0.5rem', fontSize:'0.875rem', color:'var(--ink-soft)', lineHeight:1.5, overflow:'hidden', display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical' }}>
         {session.preview_text || '暂无预览'}
       </p>
-
       {session.status === 'processing' && (
-        <div className="w-full bg-gray-100 rounded-full h-1 mb-1">
-          <div
-            className="bg-ios-blue h-1 rounded-full"
-            style={{ width: `${session.progress}%` }}
-          />
+        <div className="progress-o" style={{ marginBottom:'0.4rem' }}>
+          <div className="progress-o-bar" style={{ width: `${session.progress}%` }} />
         </div>
       )}
-
-      {/* 操作按钮 */}
-      <div className="flex items-center justify-between mt-1">
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'flex-end', gap:'0.25rem' }}>
         {session.status === 'failed' && (
           <button
-            onClick={handleRetry}
-            className="px-2 py-1 text-xs bg-yellow-100 text-yellow-700 rounded hover:bg-yellow-200"
+            onClick={e => { e.stopPropagation(); onRetry(session); }}
+            style={{ display:'inline-flex', alignItems:'center', gap:'0.25rem', padding:'0.2rem 0.5rem', borderRadius:'999px', fontSize:'0.75rem', fontWeight:600, background:'rgba(195,160,106,0.15)', border:'none', color:'var(--accent)', cursor:'pointer' }}
           >
-            继续处理
+            <RefreshCw size={11} /> 重试
           </button>
         )}
         <button
-          onClick={handleDelete}
-          className="p-1.5 text-gray-300 hover:text-ios-red hover:bg-red-50 rounded-lg transition-colors ml-auto"
-          title="删除会话"
+          onClick={e => { e.stopPropagation(); onDelete(session); }}
+          style={{ padding:'0.25rem', borderRadius:'6px', background:'none', border:'none', color:'rgba(92,74,56,0.35)', cursor:'pointer', transition:'all 150ms ease' }}
+          onMouseEnter={e => { e.currentTarget.style.color = '#8b3a2a'; e.currentTarget.style.background = 'rgba(180,70,50,0.08)'; }}
+          onMouseLeave={e => { e.currentTarget.style.color = 'rgba(92,74,56,0.35)'; e.currentTarget.style.background = 'none'; }}
         >
-          <Trash2 className="w-3.5 h-3.5" />
+          <Trash2 size={13} />
         </button>
       </div>
-
-      {session.status === 'failed' && session.current_position < session.total_segments && (
-        <div className="text-[11px] text-ios-red bg-red-50 px-2 py-1 rounded mt-1">
-          {session.error_message ? '发生错误' : '网络超时'}
-        </div>
-      )}
     </div>
   );
 });
-
 SessionItem.displayName = 'SessionItem';
 
-const WorkspacePage = () => {
+export default function WorkspacePage() {
   const [text, setText] = useState('');
-  const [processingMode, setProcessingMode] = useState('paper_polish_enhance');
+  const [mode, setMode] = useState('paper_polish_enhance');
   const [sessions, setSessions] = useState([]);
   const [queueStatus, setQueueStatus] = useState(null);
   const [activeSession, setActiveSession] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isLoadingSessions, setIsLoadingSessions] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isExtracting, setIsExtracting] = useState(false);
+  const fileInputRef = useRef(null);
   const navigate = useNavigate();
+  const { userInfo, logout } = useAuth();
 
-  // 使用 useCallback 优化函数引用稳定性
   const loadSessions = useCallback(async () => {
+    setIsLoading(true);
     try {
-      setIsLoadingSessions(true);
-      const response = await optimizationAPI.listSessions();
-      setSessions(response.data);
-
-      // 查找正在处理的会话
-      const processing = response.data.find(
-        s => s.status === 'processing' || s.status === 'queued'
-      );
-      if (processing) {
-        setActiveSession(processing.session_id);
-      }
-    } catch (error) {
-      console.error('加载会话失败:', error);
-    } finally {
-      setIsLoadingSessions(false);
-    }
+      const res = await optimizationAPI.listSessions();
+      setSessions(res.data);
+      const proc = res.data.find(s => s.status === 'processing' || s.status === 'queued');
+      if (proc) setActiveSession(proc.session_id);
+    } catch { /* silent */ } finally { setIsLoading(false); }
   }, []);
 
-  // loadQueueStatus 不依赖 activeSession，避免 useEffect 重复触发
-  const loadQueueStatus = useCallback(async () => {
-    try {
-      const response = await optimizationAPI.getQueueStatus();
-      setQueueStatus(response.data);
-    } catch (error) {
-      console.error('加载队列状态失败:', error);
-    }
+  const loadQueue = useCallback(async () => {
+    try { const r = await optimizationAPI.getQueueStatus(); setQueueStatus(r.data); } catch { /* */ }
   }, []);
 
-  const updateSessionProgress = useCallback(async (sessionId) => {
+  const updateProgress = useCallback(async (sid) => {
     try {
-      const response = await optimizationAPI.getSessionProgress(sessionId);
-      const progress = response.data;
-
-      // 更新会话列表中的进度 - 只在数据有变化时更新
+      const { data } = await optimizationAPI.getSessionProgress(sid);
       setSessions(prev => {
-        const target = prev.find(s => s.session_id === sessionId);
-        if (target && target.progress === progress.progress && target.status === progress.status) {
-          return prev; // 无变化，不触发重渲染
-        }
-        return prev.map(s =>
-          s.session_id === sessionId ? { ...s, ...progress } : s
-        );
+        const t = prev.find(s => s.session_id === sid);
+        if (t && t.progress === data.progress && t.status === data.status) return prev;
+        return prev.map(s => s.session_id === sid ? { ...s, ...data } : s);
       });
-
-      // 如果会话完成,刷新列表
-      if (progress.status === 'completed' || progress.status === 'failed') {
+      if (data.status === 'completed' || data.status === 'failed') {
         setActiveSession(null);
         loadSessions();
-
-        if (progress.status === 'completed') {
-          toast.success('优化完成!');
-        } else {
-          toast.error(`优化失败: ${progress.error_message}`);
-        }
+        data.status === 'completed' ? toast.success('优化完成！') : toast.error('优化失败，可重试');
       }
-    } catch (error) {
-      console.error('更新进度失败:', error);
-    }
+    } catch { /* */ }
   }, [loadSessions]);
 
-  // 初始加载 - 只在组件挂载时执行一次
+  useEffect(() => { loadSessions(); loadQueue(); }, [loadSessions, loadQueue]);
+  useEffect(() => { const t = setInterval(loadQueue, 15000); return () => clearInterval(t); }, [loadQueue]);
   useEffect(() => {
-    loadSessions();
-    loadQueueStatus();
-  }, [loadSessions, loadQueueStatus]);
+    if (!activeSession) return;
+    const t = setInterval(() => updateProgress(activeSession), 4000);
+    return () => clearInterval(t);
+  }, [activeSession, updateProgress]);
 
-  // 队列状态轮询 - 独立的 useEffect，避免与初始加载混淆
-  useEffect(() => {
-    const interval = setInterval(loadQueueStatus, 15000);
-    return () => clearInterval(interval);
-  }, [loadQueueStatus]);
-
-  useEffect(() => {
-    // 如果有活跃会话,每4秒更新进度（进一步降低频率）
-    if (activeSession) {
-      const interval = setInterval(() => {
-        updateSessionProgress(activeSession);
-      }, 4000);
-      return () => clearInterval(interval);
-    }
-  }, [activeSession, updateSessionProgress]);
-
-  const handleStartOptimization = useCallback(async () => {
-    if (!text.trim()) {
-      toast.error('请输入要优化的文本');
-      return;
-    }
-
-    if (isSubmitting) {
-      return;
-    }
-
+  const handleStart = useCallback(async () => {
+    if (!text.trim()) { toast.error('请输入要优化的文本'); return; }
+    if (isSubmitting) return;
+    setIsSubmitting(true);
     try {
-      setIsSubmitting(true);
-      const response = await optimizationAPI.startOptimization({
-        original_text: text,
-        processing_mode: processingMode,
-      });
-
-      setActiveSession(response.data.session_id);
+      const res = await optimizationAPI.startOptimization({ original_text: text, processing_mode: mode });
+      setActiveSession(res.data.session_id);
       toast.success('优化任务已启动');
       setText('');
       loadSessions();
-    } catch (error) {
-      toast.error('启动优化失败: ' + error.response?.data?.detail);
-    } finally {
-      setIsSubmitting(false);
-    }
-  }, [text, processingMode, isSubmitting, loadSessions]);
+    } catch (err) { toast.error(err.response?.data?.detail || '启动失败，请重试'); }
+    finally { setIsSubmitting(false); }
+  }, [text, mode, isSubmitting, loadSessions]);
 
-  const handleLogout = useCallback(() => {
-    localStorage.removeItem('cardKey');
-    navigate('/');
-  }, [navigate]);
-
-  const handleDeleteSession = useCallback(async (session) => {
-    const confirmDelete = window.confirm('确认删除该会话及其结果吗?');
-    if (!confirmDelete) {
-      return;
-    }
-
+  const handleDelete = useCallback(async (session) => {
+    if (!window.confirm('确认删除该会话及其结果？')) return;
     try {
       await optimizationAPI.deleteSession(session.session_id);
-      if (activeSession === session.session_id) {
-        setActiveSession(null);
-      }
-      toast.success('会话已删除');
-      await loadSessions();
-    } catch (error) {
-      console.error('删除会话失败:', error);
-      toast.error(error.response?.data?.detail || '删除会话失败');
-    }
+      if (activeSession === session.session_id) setActiveSession(null);
+      toast.success('已删除');
+      loadSessions();
+    } catch { toast.error('删除失败'); }
   }, [activeSession, loadSessions]);
 
-  const handleViewSession = useCallback((sessionId) => {
-    navigate(`/session/${sessionId}`);
-  }, [navigate]);
-
-  const handleRetrySegment = useCallback(async (session) => {
-    if (session.status !== 'failed') {
-      return;
-    }
-
-    const confirmRetry = window.confirm('检测到会话执行失败。是否继续处理未完成的段落?');
-    if (!confirmRetry) {
-      return;
-    }
-
+  const handleRetry = useCallback(async (session) => {
+    if (!window.confirm('继续处理未完成的段落？')) return;
     try {
-      const response = await optimizationAPI.retryFailedSegments(session.session_id);
+      await optimizationAPI.retryFailedSegments(session.session_id);
       setActiveSession(session.session_id);
-      toast.success(response.data?.message || '已重新继续处理未完成段落');
-      await loadSessions();
-    } catch (error) {
-      console.error('重试失败:', error);
-      toast.error(error.response?.data?.detail || '重试失败，请稍后再试');
-    }
+      toast.success('已重新排队');
+      loadSessions();
+    } catch { toast.error('重试失败'); }
   }, [loadSessions]);
 
-  // 使用 useMemo 缓存当前活跃会话的数据
-  const currentActiveSessionData = useMemo(() => {
-    return sessions.find(s => s.session_id === activeSession);
-  }, [sessions, activeSession]);
+  const handleFileUpload = useCallback(async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
 
+    const ext = file.name.split('.').pop().toLowerCase();
+    if (!['txt', 'docx'].includes(ext)) {
+      toast.error('仅支持 .txt 和 .docx 文件');
+      return;
+    }
+
+    setIsExtracting(true);
+    try {
+      const res = await optimizationAPI.extractFile(file);
+      setText(res.data.text);
+      toast.success(`已导入「${file.name}」，共 ${res.data.char_count.toLocaleString()} 字符`);
+    } catch (err) {
+      toast.error(err.response?.data?.detail || '文件解析失败，请检查文件格式');
+    } finally {
+      setIsExtracting(false);
+    }
+  }, []);
+
+  const activeSess = useMemo(() => sessions.find(s => s.session_id === activeSession), [sessions, activeSession]);
+  const currentMode = MODES.find(m => m.id === mode);
 
   return (
-    <div className="min-h-screen bg-ios-background">
-      {/* 顶部导航栏 - iOS Glass Style */}
-      <nav className="bg-white/80 backdrop-blur-xl border-b border-ios-separator sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-[52px]">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 bg-ios-blue rounded-lg flex items-center justify-center">
-                <FileText className="w-5 h-5 text-white" />
-              </div>
-              <h1 className="text-[17px] font-semibold text-black tracking-tight">
-                AI 论文润色增强
-              </h1>
-            </div>
-            
-            <div className="flex items-center gap-4">
-              {/* 队列状态 */}
-              {queueStatus && (
-                <div className="flex items-center gap-3 text-[13px]">
-                  <div className="flex items-center gap-1.5 bg-gray-100 px-2 py-1 rounded-md">
-                    <Users className="w-3.5 h-3.5 text-ios-gray" />
-                    <span className="text-ios-gray font-medium">
-                      {queueStatus.current_users}/{queueStatus.max_users}
-                    </span>
-                  </div>
-                  {queueStatus.queue_length > 0 && (
-                    <div className="flex items-center gap-1.5 bg-orange-50 px-2 py-1 rounded-md">
-                      <Clock className="w-3.5 h-3.5 text-ios-orange" />
-                      <span className="text-ios-orange font-medium">
-                        {queueStatus.queue_length} 排队
-                      </span>
-                    </div>
-                  )}
-                </div>
-              )}
-              
-              <button
-                onClick={handleLogout}
-                className="text-ios-red text-[17px] hover:opacity-70 transition-opacity font-normal"
-              >
-                退出
-              </button>
-            </div>
-          </div>
+    <div style={{ minHeight:'100vh', display:'flex', flexDirection:'column', background: 'linear-gradient(180deg, #fcfaf5 0%, #f2ece1 44%, #f8f5ee 100%)' }}>
+      {/* 顶部导航 */}
+      <header className="header-o">
+        <div style={{ display:'flex', alignItems:'center', gap:'0.75rem', flex:1 }}>
+          <a href="/" className="brand-o">
+            <span className="brand-mark-o" />
+            <span>OriginFlow</span>
+          </a>
+          <span style={{ width:1, height:20, background:'rgba(140,120,96,0.2)', margin:'0 0.25rem' }} />
+          <span style={{ fontSize:'0.875rem', color:'var(--ink-soft)', fontWeight:500 }}>AI 学术写作</span>
         </div>
-      </nav>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* 左侧 - 输入区域 */}
-          <div className="lg:col-span-2 space-y-6">
-            
-            {/* 说明卡片 */}
-            <div className="bg-white rounded-2xl shadow-ios overflow-hidden">
-              <div className="p-4 flex items-start gap-3 bg-blue-50/50">
-                <Info className="w-5 h-5 text-ios-blue flex-shrink-0 mt-0.5" />
-                <div className="text-[15px] text-black">
-                  <p className="font-semibold mb-1 text-ios-blue">当前模式说明</p>
-                  <p className="text-gray-700 leading-relaxed">
-                    {processingMode === 'paper_polish' && '仅进行论文润色，提升文本的学术性和表达质量。'}
-                    {processingMode === 'paper_enhance' && '直接进行原创性增强，跳过润色阶段，适合已经润色过的文本。'}
-                    {processingMode === 'paper_polish_enhance' && '先进行论文润色，然后自动进行原创性增强，两阶段处理。'}
-                    {processingMode === 'emotion_polish' && '专为感情文章设计，生成更自然、更具人性化的表达。'}
-                  </p>
-                </div>
+        <div style={{ display:'flex', alignItems:'center', gap:'0.75rem' }}>
+          {queueStatus && queueStatus.queue_length > 0 && (
+            <span className="badge-o-warm" style={{ fontSize:'0.78rem' }}>
+              排队 {queueStatus.queue_length}
+            </span>
+          )}
+          <AnnouncementBell />
+          {userInfo?.username && (
+            <button
+              onClick={() => navigate('/profile')}
+              style={{ display:'flex', alignItems:'center', gap:'0.5rem', background:'none', border:'none', cursor:'pointer', padding:'0.25rem 0.5rem', borderRadius:8, transition:'background 150ms' }}
+              onMouseEnter={e => e.currentTarget.style.background = 'rgba(140,120,96,0.08)'}
+              onMouseLeave={e => e.currentTarget.style.background = 'none'}
+              title="个人中心"
+            >
+              <div style={{
+                width:28, height:28, borderRadius:'50%',
+                background:'linear-gradient(135deg, #3d5a4e, #5f856f)',
+                display:'flex', alignItems:'center', justifyContent:'center',
+                color:'#fdf8f0', fontSize:'0.75rem', fontWeight:700,
+              }}>
+                {userInfo.username[0].toUpperCase()}
               </div>
+              <span style={{ fontSize:'0.875rem', color:'var(--ink)', fontWeight:500 }}>{userInfo.username}</span>
+              {userInfo.remaining_uses !== undefined && (
+                <span className={userInfo.remaining_uses > 0 ? 'badge-o-green' : 'badge-o-red'} style={{ fontSize:'0.78rem' }}>
+                  余 {userInfo.remaining_uses} 次
+                </span>
+              )}
+            </button>
+          )}
+          <button
+            onClick={() => { logout(); navigate('/'); }}
+            className="btn-o-ghost btn-o-sm"
+            style={{ borderRadius:'999px' }}
+          >
+            退出
+          </button>
+        </div>
+      </header>
+
+      {/* 主布局 */}
+      <div style={{ flex:1, display:'flex', overflow:'hidden', position:'relative', zIndex:1 }}>
+
+        {/* 左侧历史侧栏 */}
+        <aside style={{
+          width:280, flexShrink:0,
+          background:'rgba(255,251,244,0.6)',
+          borderRight:'1px solid rgba(140,120,96,0.14)',
+          display:'flex', flexDirection:'column',
+          backdropFilter:'blur(16px)',
+        }}>
+          <div style={{ padding:'1rem 1rem 0.75rem', borderBottom:'1px solid rgba(140,120,96,0.1)', display:'flex', alignItems:'center', gap:'0.5rem' }}>
+            <History size={15} style={{ color:'var(--ink-soft)' }} />
+            <span style={{ fontSize:'0.875rem', fontWeight:600, color:'var(--ink)' }}>历史记录</span>
+            {sessions.length > 0 && (
+              <span style={{ marginLeft:'auto', fontSize:'0.75rem', color:'var(--ink-soft)', opacity:0.7 }}>{sessions.length}</span>
+            )}
+          </div>
+          <div style={{ flex:1, overflowY:'auto' }} className="custom-scrollbar">
+            {isLoading ? (
+              <div style={{ padding:'2rem', display:'flex', justifyContent:'center' }}>
+                <div style={{ width:20, height:20, border:'2px solid rgba(140,120,96,0.2)', borderTopColor:'var(--green)', borderRadius:'50%', animation:'spin 1s linear infinite' }} />
+              </div>
+            ) : sessions.length === 0 ? (
+              <div style={{ padding:'3rem 1rem', textAlign:'center' }}>
+                <History size={28} style={{ color:'rgba(140,120,96,0.3)', margin:'0 auto 0.75rem', display:'block' }} />
+                <p style={{ fontSize:'0.875rem', color:'var(--ink-soft)', opacity:0.6, margin:0 }}>暂无历史记录</p>
+              </div>
+            ) : sessions.map(s => (
+              <SessionItem
+                key={s.id}
+                session={s}
+                onView={id => navigate(`/session/${id}`)}
+                onDelete={handleDelete}
+                onRetry={handleRetry}
+              />
+            ))}
+          </div>
+        </aside>
+
+        {/* 主内容区 */}
+        <main style={{ flex:1, overflowY:'auto', padding:'1.75rem' }} className="custom-scrollbar">
+          <div style={{ maxWidth:680, margin:'0 auto', display:'flex', flexDirection:'column', gap:'1.25rem' }}>
+
+            {/* 模式选择 */}
+            <div>
+              <p className="text-o-label" style={{ marginBottom:'0.75rem' }}>处理模式</p>
+              <div style={{ display:'flex', flexWrap:'wrap', gap:'0.5rem' }}>
+                {MODES.map(m => (
+                  <button
+                    key={m.id}
+                    onClick={() => setMode(m.id)}
+                    className={`chip-o ${mode === m.id ? 'selected' : ''}`}
+                    title={m.desc}
+                  >
+                    {m.label}
+                  </button>
+                ))}
+              </div>
+              <p style={{ marginTop:'0.5rem', fontSize:'0.8rem', color:'var(--ink-soft)', opacity:0.8 }}>
+                {currentMode?.desc}
+              </p>
             </div>
 
-            <div className="bg-white rounded-2xl shadow-ios p-5">
-              <div className="h-[40px] flex items-center mb-2">
-                <h2 className="text-[20px] font-bold text-black tracking-tight pl-1">
-                  新建任务
-                </h2>
-              </div>
-              
-              {/* 处理模式选择 - iOS Segmented Control Style */}
-              <div className="mb-5">
-                <label className="block text-[13px] font-medium text-ios-gray mb-2 ml-1 uppercase tracking-wide">
-                  选择模式
-                </label>
-                <div className="space-y-3">
-                  {[
-                    { id: 'paper_polish', title: '论文润色', desc: '提升学术表达质量' },
-                    { id: 'paper_enhance', title: '论文增强', desc: '直接提升原创性' },
-                    { id: 'paper_polish_enhance', title: '润色 + 增强', desc: '两阶段完整处理' },
-                    { id: 'emotion_polish', title: '感情文章润色', desc: '自然、人性化表达' }
-                  ].map((mode) => (
-                    <label
-                      key={mode.id}
-                      className={`flex items-center p-3.5 rounded-xl cursor-pointer transition-all border ${
-                        processingMode === mode.id
-                          ? 'bg-blue-50 border-ios-blue ring-1 ring-ios-blue/20'
-                          : 'bg-white border-gray-200 hover:bg-gray-50'
-                      }`}
-                    >
-                      <input
-                        type="radio"
-                        name="processingMode"
-                        value={mode.id}
-                        checked={processingMode === mode.id}
-                        onChange={(e) => setProcessingMode(e.target.value)}
-                        className="mr-3 w-5 h-5 text-ios-blue focus:ring-ios-blue border-gray-300"
-                      />
-                      <div>
-                        <div className={`font-semibold text-[15px] ${processingMode === mode.id ? 'text-ios-blue' : 'text-black'}`}>
-                          {mode.title}
-                        </div>
-                        <div className="text-[13px] text-ios-gray mt-0.5">
-                          {mode.desc}
-                        </div>
-                      </div>
-                    </label>
-                  ))}
+            {/* 文本输入卡片 */}
+            <div className="card-o" style={{ overflow:'hidden' }}>
+              {/* hidden file input */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".txt,.docx"
+                style={{ display:'none' }}
+                onChange={handleFileUpload}
+              />
+              <div style={{ padding:'1rem 1.25rem 0.75rem', borderBottom:'1px solid rgba(140,120,96,0.1)', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+                <div style={{ display:'flex', alignItems:'center', gap:'0.5rem' }}>
+                  <Layers size={15} style={{ color:'var(--ink-soft)' }} />
+                  <span style={{ fontSize:'0.875rem', fontWeight:600, color:'var(--ink)' }}>粘贴内容</span>
+                </div>
+                <div style={{ display:'flex', alignItems:'center', gap:'0.75rem' }}>
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isExtracting}
+                    style={{
+                      display:'flex', alignItems:'center', gap:'0.375rem',
+                      padding:'0.3rem 0.75rem', borderRadius:6,
+                      border:'1px solid rgba(140,120,96,0.25)',
+                      background: isExtracting ? 'rgba(140,120,96,0.08)' : 'rgba(255,251,244,0.8)',
+                      color:'var(--ink-soft)', fontSize:'0.8rem', fontWeight:500,
+                      cursor: isExtracting ? 'not-allowed' : 'pointer',
+                      transition:'all 150ms',
+                    }}
+                    onMouseEnter={e => { if (!isExtracting) { e.currentTarget.style.borderColor='var(--accent)'; e.currentTarget.style.color='var(--accent)'; }}}
+                    onMouseLeave={e => { e.currentTarget.style.borderColor='rgba(140,120,96,0.25)'; e.currentTarget.style.color='var(--ink-soft)'; }}
+                    title="支持 .txt 和 .docx 文件"
+                  >
+                    {isExtracting ? (
+                      <><span style={{ width:11, height:11, border:'1.5px solid rgba(140,120,96,0.3)', borderTopColor:'var(--accent)', borderRadius:'50%', display:'inline-block', animation:'spin 1s linear infinite' }} />解析中…</>
+                    ) : (
+                      <><Paperclip size={12} />上传文件</>
+                    )}
+                  </button>
+                  <span style={{ fontSize:'0.78rem', color:'var(--ink-soft)', opacity:0.6 }}>{text.length.toLocaleString()} 字</span>
                 </div>
               </div>
-              
-              <div className="relative">
-                <textarea
-                  value={text}
-                  onChange={(e) => setText(e.target.value)}
-                  placeholder="在此粘贴您的内容..."
-                  className="w-full h-64 px-4 py-3 bg-gray-50 rounded-xl focus:bg-white focus:ring-2 focus:ring-ios-blue/20 transition-all text-[16px] leading-relaxed text-black placeholder-gray-400 border-none outline-none resize-none"
-                />
-                <div className="absolute bottom-3 right-3 text-[12px] text-ios-gray bg-white/80 px-2 py-1 rounded-md backdrop-blur-sm">
-                  {text.length} 字
-                </div>
-              </div>
-              
-              <div className="mt-5 flex justify-end">
+              <textarea
+                value={text}
+                onChange={e => setText(e.target.value)}
+                placeholder="在此粘贴您需要优化的论文内容…"
+                style={{
+                  display:'block', width:'100%', minHeight:200,
+                  padding:'1rem 1.25rem',
+                  background:'transparent',
+                  border:'none', outline:'none', resize:'none',
+                  fontFamily:'Manrope, sans-serif', fontSize:'0.95rem',
+                  color:'var(--ink)', lineHeight:1.75,
+                }}
+              />
+              <div style={{ padding:'0.75rem 1.25rem', borderTop:'1px solid rgba(140,120,96,0.1)', display:'flex', justifyContent:'flex-end' }}>
                 <button
-                  onClick={handleStartOptimization}
-                  disabled={!text.trim() || activeSession || isSubmitting}
-                  className="flex items-center gap-2 bg-ios-blue hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-semibold py-3 px-8 rounded-xl transition-all active:scale-[0.98] shadow-sm text-[17px]"
+                  onClick={handleStart}
+                  disabled={!text.trim() || !!activeSession || isSubmitting}
+                  className="btn-o-primary"
+                  style={{ gap:'0.5rem' }}
                 >
                   {isSubmitting ? (
-                    <>
-                      <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      提交中...
-                    </>
+                    <><span style={{ width:14, height:14, border:'2px solid rgba(255,248,240,0.3)', borderTopColor:'#fdf8f0', borderRadius:'50%', display:'inline-block', animation:'spin 1s linear infinite' }} />提交中…</>
                   ) : (
-                    <>
-                      <Play className="w-5 h-5 fill-current" />
-                      开始优化
-                    </>
+                    <><Play size={14} fill="#fdf8f0" />开始优化</>
                   )}
                 </button>
               </div>
             </div>
 
-            {/* 活跃会话进度 */}
-            {activeSession && currentActiveSessionData && (
-              <div className="bg-white rounded-2xl shadow-ios p-5 border border-blue-100">
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-[17px] font-bold text-black flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-ios-blue animate-pulse" />
-                    正在处理
-                  </h2>
-                  <span className="text-[13px] font-medium px-2 py-1 bg-blue-50 text-ios-blue rounded-md">
-                    进行中
-                  </span>
-                </div>
-
-                {(() => {
-                  const session = currentActiveSessionData;
-                  const getStageName = (stage) => {
-                    if (stage === 'polish') return '论文润色';
-                    if (stage === 'emotion_polish') return '感情文章润色';
-                    if (stage === 'enhance') return '原创性增强';
-                    return stage;
-                  };
-                  return (
-                    <div className="space-y-4">
-                      <div>
-                        <div className="flex justify-between text-[13px] mb-2 font-medium">
-                          <span className="text-ios-gray">
-                            当前阶段: <span className="text-black">{getStageName(session.current_stage)}</span>
-                          </span>
-                          <span className="text-ios-blue">
-                            {session.progress.toFixed(1)}%
-                          </span>
-                        </div>
-                        <div className="w-full bg-gray-100 rounded-full h-2">
-                          <div
-                            className="bg-ios-blue h-2 rounded-full transition-all duration-500 ease-out shadow-[0_0_10px_rgba(0,122,255,0.3)]"
-                            style={{ width: `${session.progress}%` }}
-                          />
-                        </div>
-                      </div>
-
-                      <div className="flex justify-between items-center text-[13px]">
-                        <span className="text-ios-gray">
-                          进度: <span className="font-medium text-black">{session.current_position + 1}</span> / {session.total_segments} 段
-                        </span>
-
-                        {session.status === 'queued' && queueStatus?.your_position && (
-                          <div className="flex items-center gap-1.5 text-ios-orange">
-                            <Clock className="w-3.5 h-3.5" />
-                            <span>
-                              排队第 {queueStatus.your_position} 位
-                              (~{Math.ceil(queueStatus.estimated_wait_time / 60)}分)
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })()}
-              </div>
-            )}
-          </div>
-
-          {/* 右侧 - 历史会话 */}
-          <div className="space-y-6">
-            <div className="bg-white rounded-2xl shadow-ios overflow-hidden flex flex-col h-[calc(100vh-140px)] sticky top-24">
-              <div className="p-5 border-b border-gray-100 bg-white/50 backdrop-blur-sm z-10 h-[72px] flex items-center">
-                <div className="flex items-center gap-2">
-                  <History className="w-5 h-5 text-ios-gray" />
-                  <h2 className="text-[20px] font-bold text-black tracking-tight">
-                    历史记录
-                  </h2>
-                </div>
-              </div>
-              
-              <div className="flex-1 overflow-y-auto p-3 space-y-3 custom-scrollbar h-full">
-                {isLoadingSessions ? (
-                  <div className="flex items-center justify-center py-12">
-                    <div className="w-6 h-6 border-2 border-ios-gray/30 border-t-ios-gray rounded-full animate-spin" />
+            {/* 活跃任务进度卡片 */}
+            {activeSession && activeSess && (
+              <div className="card-o-sm" style={{ padding:'1.25rem', borderColor:'rgba(61,90,78,0.25)' }}>
+                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'0.875rem' }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:'0.5rem' }}>
+                    <span style={{ width:8, height:8, borderRadius:'50%', background:'#3d5a4e', display:'inline-block', animation:'pulse 2s ease-in-out infinite' }} />
+                    <span style={{ fontSize:'0.9rem', fontWeight:600, color:'var(--ink)' }}>正在处理</span>
                   </div>
-                ) : sessions.length === 0 ? (
-                  <div className="text-center py-12 space-y-2">
-                    <div className="w-12 h-12 bg-gray-50 rounded-full flex items-center justify-center mx-auto text-gray-300">
-                      <History className="w-6 h-6" />
-                    </div>
-                    <p className="text-ios-gray text-sm">
-                      暂无会话记录
-                    </p>
-                  </div>
-                ) : (
-                  sessions.map((session) => (
-                    <SessionItem
-                      key={session.id}
-                      session={session}
-                      activeSession={activeSession}
-                      onView={handleViewSession}
-                      onDelete={handleDeleteSession}
-                      onRetry={handleRetrySegment}
-                    />
-                  ))
+                  <span className="badge-o-green">{STAGE[activeSess.current_stage] || activeSess.current_stage}</span>
+                </div>
+                <div className="progress-o" style={{ marginBottom:'0.75rem' }}>
+                  <div className="progress-o-bar" style={{ width:`${activeSess.progress}%` }} />
+                </div>
+                <div style={{ display:'flex', justifyContent:'space-between', fontSize:'0.8rem', color:'var(--ink-soft)' }}>
+                  <span>段落 {activeSess.current_position + 1} / {activeSess.total_segments}</span>
+                  <span style={{ fontWeight:600, color:'var(--green)' }}>{activeSess.progress.toFixed(1)}%</span>
+                </div>
+                {activeSess.status === 'queued' && queueStatus?.your_position && (
+                  <p style={{ margin:'0.5rem 0 0', fontSize:'0.8rem', color:'var(--accent-soft, #a8835a)' }}>
+                    排队第 {queueStatus.your_position} 位，约 {Math.ceil(queueStatus.estimated_wait_time / 60)} 分钟
+                  </p>
                 )}
               </div>
-            </div>
+            )}
+
           </div>
-        </div>
+        </main>
       </div>
+
+      <style>{`
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+        @keyframes spin { to{transform:rotate(360deg)} }
+        @keyframes fadeInUp { from{opacity:0;transform:translateY(16px)} to{opacity:1;transform:none} }
+      `}</style>
     </div>
   );
-};
-
-export default WorkspacePage;
+}

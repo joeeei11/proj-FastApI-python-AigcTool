@@ -3,14 +3,16 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Type
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import inspect, func, case
 from sqlalchemy.orm import Session, defer, joinedload
 
 from app.config import reload_settings, settings
 from app.database import get_db
 from app.models.models import (
+    Announcement,
     ChangeLog,
+    Coupon,
     OptimizationSegment,
     OptimizationSession,
     SessionHistory,
@@ -18,12 +20,17 @@ from app.models.models import (
     User,
 )
 from app.schemas import (
+    AnnouncementCreate,
+    AnnouncementResponse,
     CardKeyGenerate,
     CardKeyResponse,
+    CouponCreate,
+    CouponResponse,
     DatabaseUpdateRequest,
     UserResponse,
     UserUsageUpdate,
 )
+from app.utils.auth import generate_card_key as _generate_code
 from app.services.concurrency import concurrency_manager
 from app.word_formatter.services.job_manager import get_job_manager
 from app.utils.auth import (
@@ -189,9 +196,25 @@ async def batch_generate_keys(
     return {"count": len(results), "keys": results}
 
 
-@router.get("/users", response_model=List[UserResponse])
-async def get_all_users(_: str = Depends(get_admin_from_token), db: Session = Depends(get_db)) -> List[User]:
-    return db.query(User).order_by(User.created_at.desc()).all()
+@router.get("/users")
+async def get_all_users(_: str = Depends(get_admin_from_token), db: Session = Depends(get_db)) -> List[Dict[str, Any]]:
+    users = db.query(User).order_by(User.created_at.desc()).all()
+    return [
+        {
+            "id": u.id,
+            "username": u.username,
+            "email": u.email,
+            "card_key": u.card_key,
+            "is_active": u.is_active,
+            "usage_limit": u.usage_limit or 0,
+            "usage_count": u.usage_count or 0,
+            "remaining_uses": max(0, (u.usage_limit or 0) - (u.usage_count or 0)),
+            "created_at": u.created_at,
+            "last_used": u.last_used,
+            "last_login": u.last_login,
+        }
+        for u in users
+    ]
 
 
 @router.patch("/users/{user_id}/toggle")
@@ -236,6 +259,33 @@ async def update_user_usage(
         "usage_limit": user.usage_limit,
         "usage_count": user.usage_count,
         "message": "使用限制已更新",
+    }
+
+
+class AddCreditsPayload(BaseModel):
+    credits: int = Field(..., ge=1, description="赠送的次数")
+
+
+@router.post("/users/{user_id}/add-credits")
+async def add_user_credits(
+    user_id: int,
+    payload: AddCreditsPayload,
+    _: str = Depends(get_admin_from_token),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """向用户赠送次数（在现有基础上增加）"""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    user.usage_limit = (user.usage_limit or 0) + payload.credits
+    db.commit()
+    db.refresh(user)
+    return {
+        "id": user.id,
+        "usage_limit": user.usage_limit,
+        "usage_count": user.usage_count,
+        "remaining_uses": max(0, user.usage_limit - (user.usage_count or 0)),
+        "message": f"已赠送 {payload.credits} 次",
     }
 
 
@@ -425,9 +475,11 @@ async def get_user_details(
         "recent_sessions": [
             {
                 "id": session.id,
+                "session_id": session.session_id,
                 "status": session.status,
+                "processing_mode": session.processing_mode,
                 "created_at": session.created_at,
-                "updated_at": session.updated_at,
+                "completed_at": session.completed_at,
             }
             for session in recent_sessions
         ],
@@ -725,6 +777,58 @@ async def get_user_sessions(
     return result
 
 
+@router.get("/sessions/{session_id}/detail")
+async def get_session_detail(
+    session_id: int,
+    _: str = Depends(get_admin_from_token),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """获取单个会话的详细信息（包含所有段落的原文和处理结果）"""
+    session = db.query(OptimizationSession).options(
+        joinedload(OptimizationSession.user),
+        joinedload(OptimizationSession.segments)
+    ).filter(OptimizationSession.id == session_id).first()
+
+    if not session:
+        raise HTTPException(status_code=404, detail="会话不存在")
+
+    segments = sorted(session.segments, key=lambda s: s.segment_index)
+
+    processing_time = None
+    if session.completed_at and session.created_at:
+        processing_time = (session.completed_at - session.created_at).total_seconds()
+    elif session.status == "processing" and session.created_at:
+        processing_time = (datetime.utcnow() - session.created_at).total_seconds()
+
+    return {
+        "id": session.id,
+        "session_id": session.session_id,
+        "status": session.status,
+        "processing_mode": session.processing_mode,
+        "original_text": session.original_text,
+        "total_segments": session.total_segments,
+        "progress": session.progress,
+        "created_at": session.created_at.isoformat() if session.created_at else None,
+        "completed_at": session.completed_at.isoformat() if session.completed_at else None,
+        "processing_time": processing_time,
+        "error_message": session.error_message,
+        "card_key": session.user.card_key if session.user else None,
+        "segments": [
+            {
+                "id": seg.id,
+                "segment_index": seg.segment_index,
+                "stage": seg.stage,
+                "status": seg.status,
+                "is_title": seg.is_title,
+                "original_text": seg.original_text,
+                "polished_text": seg.polished_text,
+                "enhanced_text": seg.enhanced_text,
+            }
+            for seg in segments
+        ],
+    }
+
+
 @router.get("/config")
 async def get_config(_: str = Depends(get_admin_from_token)) -> Dict[str, Any]:
     return {
@@ -884,3 +988,165 @@ async def delete_table_record(
     db.delete(record)
     db.commit()
     return {"message": "记录已删除"}
+
+
+# ─── 卡券管理端点 ────────────────────────────────────────────────
+
+def _coupon_status(coupon: Coupon) -> str:
+    """计算卡券当前状态（四态）"""
+    if not coupon.is_active:
+        return "disabled"
+    if coupon.expires_at and coupon.expires_at < datetime.utcnow():
+        return "expired"
+    if coupon.max_redemptions > 0 and (coupon.used_count or 0) >= coupon.max_redemptions:
+        return "exhausted"
+    return "available"
+
+
+def _coupon_to_response(coupon: Coupon) -> CouponResponse:
+    return CouponResponse(
+        id=coupon.id,
+        code=coupon.code,
+        credits=coupon.credits or coupon.total_uses or 0,
+        max_redemptions=coupon.max_redemptions or 0,
+        used_count=coupon.used_count or 0,
+        is_active=coupon.is_active,
+        expires_at=coupon.expires_at,
+        created_at=coupon.created_at,
+        status=_coupon_status(coupon),
+    )
+
+
+@router.post("/coupons", response_model=List[CouponResponse])
+async def create_coupons(
+    data: CouponCreate,
+    _: str = Depends(get_admin_from_token),
+    db: Session = Depends(get_db),
+) -> List[CouponResponse]:
+    """批量创建卡券"""
+    results = []
+    for _ in range(data.count):
+        code = _generate_code(prefix=data.prefix or "")
+        coupon = Coupon(
+            code=code,
+            credits=data.credits,
+            max_redemptions=data.max_redemptions,
+            expires_at=data.expires_at,
+            used_count=0,
+            is_active=True,
+        )
+        db.add(coupon)
+        db.commit()
+        db.refresh(coupon)
+        results.append(_coupon_to_response(coupon))
+    return results
+
+
+@router.get("/coupons", response_model=List[CouponResponse])
+async def list_coupons(
+    _: str = Depends(get_admin_from_token),
+    db: Session = Depends(get_db),
+) -> List[CouponResponse]:
+    """获取所有卡券"""
+    coupons = db.query(Coupon).order_by(Coupon.created_at.desc()).all()
+    return [_coupon_to_response(c) for c in coupons]
+
+
+@router.patch("/coupons/{coupon_id}/toggle")
+async def toggle_coupon(
+    coupon_id: int,
+    _: str = Depends(get_admin_from_token),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """启用/禁用卡券"""
+    coupon = db.query(Coupon).filter(Coupon.id == coupon_id).first()
+    if not coupon:
+        raise HTTPException(status_code=404, detail="卡券不存在")
+    coupon.is_active = not coupon.is_active
+    db.commit()
+    return {"id": coupon.id, "is_active": coupon.is_active}
+
+
+@router.delete("/coupons/{coupon_id}")
+async def delete_coupon(
+    coupon_id: int,
+    _: str = Depends(get_admin_from_token),
+    db: Session = Depends(get_db),
+) -> Dict[str, str]:
+    """删除卡券"""
+    coupon = db.query(Coupon).filter(Coupon.id == coupon_id).first()
+    if not coupon:
+        raise HTTPException(status_code=404, detail="卡券不存在")
+    db.delete(coupon)
+    db.commit()
+    return {"message": "卡券已删除"}
+
+
+# ─── 公告管理端点 ────────────────────────────────────────────────
+
+@router.get("/announcements", response_model=List[AnnouncementResponse])
+async def list_announcements(
+    _: str = Depends(get_admin_from_token),
+    db: Session = Depends(get_db),
+) -> List[Announcement]:
+    """获取所有公告（含已过期/已禁用）"""
+    return db.query(Announcement).order_by(Announcement.created_at.desc()).all()
+
+
+@router.post("/announcements", response_model=AnnouncementResponse)
+async def create_announcement(
+    data: AnnouncementCreate,
+    _: str = Depends(get_admin_from_token),
+    db: Session = Depends(get_db),
+) -> Announcement:
+    ann = Announcement(**data.model_dump())
+    db.add(ann)
+    db.commit()
+    db.refresh(ann)
+    return ann
+
+
+@router.put("/announcements/{ann_id}", response_model=AnnouncementResponse)
+async def update_announcement(
+    ann_id: int,
+    data: AnnouncementCreate,
+    _: str = Depends(get_admin_from_token),
+    db: Session = Depends(get_db),
+) -> Announcement:
+    ann = db.query(Announcement).filter(Announcement.id == ann_id).first()
+    if not ann:
+        raise HTTPException(status_code=404, detail="公告不存在")
+    for k, v in data.model_dump().items():
+        setattr(ann, k, v)
+    ann.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(ann)
+    return ann
+
+
+@router.patch("/announcements/{ann_id}/toggle")
+async def toggle_announcement(
+    ann_id: int,
+    _: str = Depends(get_admin_from_token),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    ann = db.query(Announcement).filter(Announcement.id == ann_id).first()
+    if not ann:
+        raise HTTPException(status_code=404, detail="公告不存在")
+    ann.is_active = not ann.is_active
+    db.commit()
+    return {"id": ann.id, "is_active": ann.is_active}
+
+
+@router.delete("/announcements/{ann_id}")
+async def delete_announcement(
+    ann_id: int,
+    _: str = Depends(get_admin_from_token),
+    db: Session = Depends(get_db),
+) -> Dict[str, str]:
+    ann = db.query(Announcement).filter(Announcement.id == ann_id).first()
+    if not ann:
+        raise HTTPException(status_code=404, detail="公告不存在")
+    db.delete(ann)
+    db.commit()
+    return {"message": "公告已删除"}

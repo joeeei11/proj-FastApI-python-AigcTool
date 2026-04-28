@@ -12,6 +12,8 @@ from typing import Dict, Tuple, Optional
 from app.config import settings
 from app.database import init_db
 from app.routes import admin, prompts, optimization
+from app.routes.auth import router as auth_router
+from app.routes.announcements import router as announcements_router
 from app.word_formatter import router as word_formatter_router
 from app.word_formatter.services import get_job_manager
 from app.models.models import CustomPrompt
@@ -90,10 +92,12 @@ app.add_middleware(
 )
 
 # 注册路由（添加 /api 前缀，与 backend/app/main.py 保持一致）
+app.include_router(auth_router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
 app.include_router(prompts.router, prefix="/api")
 app.include_router(optimization.router, prefix="/api")
 app.include_router(word_formatter_router, prefix="/api")
+app.include_router(announcements_router, prefix="/api")
 
 # 速率限制中间件已移除
 

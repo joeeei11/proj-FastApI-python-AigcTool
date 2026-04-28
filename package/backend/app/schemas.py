@@ -4,7 +4,7 @@ from datetime import datetime
 
 
 class UserCreate(BaseModel):
-    """创建用户"""
+    """创建用户（历史兼容）"""
     card_key: str
     access_link: str
 
@@ -12,14 +12,114 @@ class UserCreate(BaseModel):
 class UserResponse(BaseModel):
     """用户响应"""
     id: int
-    card_key: str
-    access_link: str
+    username: Optional[str] = None
+    email: Optional[str] = None
+    card_key: Optional[str] = None
+    access_link: Optional[str] = None
     is_active: bool
     created_at: datetime
     last_used: Optional[datetime] = None
+    last_login: Optional[datetime] = None
     usage_limit: int
     usage_count: int
-    
+
+    class Config:
+        from_attributes = True
+
+
+class UserRegister(BaseModel):
+    """用户注册"""
+    username: str = Field(..., min_length=3, max_length=50)
+    password: str = Field(..., min_length=6)
+    email: Optional[str] = None
+
+
+class UserLogin(BaseModel):
+    """用户登录"""
+    username: str
+    password: str
+
+
+class TokenResponse(BaseModel):
+    """JWT 令牌响应"""
+    access_token: str
+    token_type: str = "bearer"
+    user_id: int
+    username: str
+    remaining_uses: int
+
+
+class UserMeResponse(BaseModel):
+    """当前用户信息"""
+    id: int
+    username: str
+    email: Optional[str] = None
+    remaining_uses: int
+    usage_count: int
+    usage_limit: int
+    created_at: datetime
+    last_login: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class RedeemCoupon(BaseModel):
+    """兑换卡券"""
+    code: str
+
+
+class AnnouncementCreate(BaseModel):
+    """创建/更新公告"""
+    title: str = Field(..., max_length=100)
+    content: str
+    type: str = Field('info', pattern='^(info|warning|event)$')
+    is_active: bool = True
+    expires_at: Optional[datetime] = None
+
+
+class AnnouncementResponse(BaseModel):
+    """公告响应"""
+    id: int
+    title: str
+    content: str
+    type: str
+    is_active: bool
+    expires_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ChangePasswordRequest(BaseModel):
+    """修改密码"""
+    old_password: str
+    new_password: str = Field(..., min_length=6, description="新密码至少 6 位")
+
+
+class CouponCreate(BaseModel):
+    """创建卡券"""
+    credits: int = Field(10, ge=1, description="每人兑换获得的使用次数")
+    max_redemptions: int = Field(0, ge=0, description="最多兑换人数，0 表示不限")
+    expires_at: Optional[datetime] = Field(None, description="过期时间，null 表示永不过期")
+    count: int = Field(1, ge=1, le=100, description="批量生成张数")
+    prefix: Optional[str] = None
+
+
+class CouponResponse(BaseModel):
+    """卡券响应"""
+    id: int
+    code: str
+    credits: int                          # 每人兑换获得次数
+    max_redemptions: int = 0             # 最多兑换人数，0=不限
+    used_count: int = 0                  # 已兑换人数
+    is_active: bool
+    expires_at: Optional[datetime] = None
+    created_at: Optional[datetime] = None
+    status: str = "available"            # available / exhausted / expired / disabled
+
     class Config:
         from_attributes = True
 

@@ -8,20 +8,31 @@ from app.config import settings
 class User(Base):
     """用户表"""
     __tablename__ = "users"
-    
+
     id = Column(Integer, primary_key=True, index=True)
-    card_key = Column(String(255), unique=True, index=True, nullable=False)
-    access_link = Column(String(255), unique=True, index=True, nullable=False)
+    # 账号登录字段
+    username = Column(String(50), unique=True, index=True, nullable=True)
+    password_hash = Column(String(255), nullable=True)
+    email = Column(String(100), unique=True, nullable=True)
+    last_login = Column(DateTime, nullable=True)
+    # 历史兼容字段（旧版卡密模式）
+    card_key = Column(String(255), unique=True, index=True, nullable=True)
+    access_link = Column(String(255), unique=True, index=True, nullable=True)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     last_used = Column(DateTime, nullable=True)
-    usage_limit = Column(Integer, default=settings.DEFAULT_USAGE_LIMIT)
+    usage_limit = Column(Integer, default=0)
     usage_count = Column(Integer, default=0)
-    
+
     # 关系
     sessions = relationship("OptimizationSession", back_populates="user")
     prompts = relationship("CustomPrompt", back_populates="user")
     saved_specs = relationship("SavedSpec", back_populates="user", cascade="all, delete-orphan")
+    redeemed_coupons = relationship("Coupon", back_populates="redeemed_by")
+
+    @property
+    def remaining_uses(self) -> int:
+        return max(0, self.usage_limit - self.usage_count)
 
 
 class CustomPrompt(Base):
@@ -148,6 +159,53 @@ class QueueStatus(Base):
     status = Column(String(50))  # 'queued' 或 'processing'
     created_at = Column(DateTime, default=datetime.utcnow)
     started_at = Column(DateTime, nullable=True)
+
+
+class Coupon(Base):
+    """卡券表（管理员创建，用户兑换）"""
+    __tablename__ = "coupons"
+
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String(50), unique=True, index=True, nullable=False)
+    credits = Column(Integer, default=10)           # 每人兑换获得的次数
+    max_redemptions = Column(Integer, default=0)    # 最多兑换人数，0 = 不限
+    used_count = Column(Integer, default=0)         # 已兑换人数
+    is_active = Column(Boolean, default=True)
+    expires_at = Column(DateTime, nullable=True)    # 过期时间，null = 永不过期
+    created_at = Column(DateTime, default=datetime.utcnow)
+    # 以下字段兼容旧数据，新逻辑不再写入
+    total_uses = Column(Integer, nullable=True)
+    redeemed_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    redeemed_at = Column(DateTime, nullable=True)
+
+    redeemed_by = relationship("User", back_populates="redeemed_coupons")
+    redemptions = relationship("CouponRedemption", back_populates="coupon", cascade="all, delete-orphan")
+
+
+class CouponRedemption(Base):
+    """卡券兑换记录表（支持多人兑换同一卡券）"""
+    __tablename__ = "coupon_redemptions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    coupon_id = Column(Integer, ForeignKey("coupons.id"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    redeemed_at = Column(DateTime, default=datetime.utcnow)
+
+    coupon = relationship("Coupon", back_populates="redemptions")
+
+
+class Announcement(Base):
+    """公告表"""
+    __tablename__ = "announcements"
+
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String(100), nullable=False)
+    content = Column(Text, nullable=False)
+    type = Column(String(20), default='info')   # info / warning / event
+    is_active = Column(Boolean, default=True)
+    expires_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class SystemSetting(Base):

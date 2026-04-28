@@ -58,3 +58,20 @@ def verify_token(token: str) -> Optional[dict]:
         return payload
     except JWTError:
         return None
+
+
+def get_current_user_from_token(token: str, db) -> "User":
+    """从 token 字符串验证并返回 User 对象（供路由依赖使用）"""
+    from fastapi import HTTPException, status
+    from app.models.models import User
+
+    payload = verify_token(token)
+    if not payload or payload.get("role") == "admin":
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="令牌无效或已过期")
+    user_id = payload.get("sub")
+    if not user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="令牌无效")
+    user = db.query(User).filter(User.id == int(user_id), User.is_active.is_(True)).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="用户不存在或已被禁用")
+    return user
