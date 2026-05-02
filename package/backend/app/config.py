@@ -85,6 +85,11 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440  # 24小时
     
+    # 图片生成配置
+    IMAGE_API_KEY: str = ""
+    IMAGE_BASE_URL: str = "https://www.openclaudecode.cn"
+    IMAGE_MODEL: str = "gpt-image-2"
+
     # 管理员账户
     ADMIN_USERNAME: str = "admin"
     ADMIN_PASSWORD: str = "admin123"

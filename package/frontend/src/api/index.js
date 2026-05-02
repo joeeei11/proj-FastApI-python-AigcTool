@@ -134,6 +134,12 @@ export const healthAPI = {
   checkModels: () => api.get('/health/models', { timeout: 15000 }),
 };
 
+// Image API
+export const imageAPI = {
+  generate: (data) => api.post('/image/generate', data, { timeout: 120000 }),
+  getCredits: () => api.get('/image/credits', { timeout: 10000 }),
+};
+
 // Word Formatter API
 export const wordFormatterAPI = {
   getUsage: () => api.get('/word-formatter/usage'),

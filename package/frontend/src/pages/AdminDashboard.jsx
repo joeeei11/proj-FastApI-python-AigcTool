@@ -84,6 +84,7 @@ const AdminDashboard = () => {
   const [coupons, setCoupons] = useState([]);
   const [loadingCoupons, setLoadingCoupons] = useState(false);
   const [couponCount, setCouponCount] = useState(1);
+  const [couponType, setCouponType] = useState('usage');
   const [couponCredits, setCouponCredits] = useState(10);
   const [couponMaxRedemptions, setCouponMaxRedemptions] = useState(0);
   const [couponExpiresAt, setCouponExpiresAt] = useState('');
@@ -195,6 +196,7 @@ const AdminDashboard = () => {
   const handleCreateCoupons = async () => {
     try {
       const res = await adminAPI.createCoupons({
+        coupon_type: couponType,
         credits: couponCredits,
         max_redemptions: couponMaxRedemptions,
         expires_at: couponExpiresAt || null,
@@ -918,8 +920,21 @@ const AdminDashboard = () => {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    每人获得次数
-                    <span className="ml-1 text-xs text-gray-400 font-normal">兑换后用户获得的使用次数</span>
+                    卡券类型
+                  </label>
+                  <select
+                    value={couponType}
+                    onChange={(e) => setCouponType(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 outline-none bg-white"
+                  >
+                    <option value="usage">使用次数（论文优化）</option>
+                    <option value="image">图片点数（AI 生图）</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    每人获得数量
+                    <span className="ml-1 text-xs text-gray-400 font-normal">次数或图片点数</span>
                   </label>
                   <input
                     type="number"
@@ -1062,11 +1077,14 @@ const AdminDashboard = () => {
                                 </button>
                               </div>
                             </td>
-                            {/* 每人获得次数 */}
+                            {/* 类型 + 每人获得数量 */}
                             <td className="px-4 py-3 text-center">
-                              <span className="px-2 py-0.5 bg-purple-50 text-purple-700 rounded-full font-semibold text-xs">
-                                {c.credits} 次
-                              </span>
+                              <div className="flex flex-col items-center gap-1">
+                                <span className={`px-2 py-0.5 rounded-full font-semibold text-xs ${c.coupon_type === 'image' ? 'bg-blue-50 text-blue-600' : 'bg-purple-50 text-purple-700'}`}>
+                                  {c.coupon_type === 'image' ? '🖼 图片' : '📝 次数'}
+                                </span>
+                                <span className="text-xs text-gray-600">{c.credits} {c.coupon_type === 'image' ? '点' : '次'}</span>
+                              </div>
                             </td>
                             {/* 兑换进度 */}
                             <td className="px-4 py-3 text-center">

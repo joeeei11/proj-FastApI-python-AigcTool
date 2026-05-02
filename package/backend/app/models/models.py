@@ -23,6 +23,7 @@ class User(Base):
     last_used = Column(DateTime, nullable=True)
     usage_limit = Column(Integer, default=0)
     usage_count = Column(Integer, default=0)
+    image_credits = Column(Integer, default=0)
 
     # 关系
     sessions = relationship("OptimizationSession", back_populates="user")
@@ -167,7 +168,8 @@ class Coupon(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     code = Column(String(50), unique=True, index=True, nullable=False)
-    credits = Column(Integer, default=10)           # 每人兑换获得的次数
+    coupon_type = Column(String(20), default='usage')  # 'usage'=使用次数 / 'image'=图片点数
+    credits = Column(Integer, default=10)           # 每人兑换获得的次数/点数
     max_redemptions = Column(Integer, default=0)    # 最多兑换人数，0 = 不限
     used_count = Column(Integer, default=0)         # 已兑换人数
     is_active = Column(Boolean, default=True)

@@ -42,7 +42,7 @@ export default function WelcomePage() {
       const { access_token, user_id, username, remaining_uses } = res.data;
       login(access_token, { id: user_id, username, remaining_uses });
       toast.success(tab === 'login' ? '欢迎回来' : '账号创建成功');
-      navigate(remaining_uses === 0 ? '/redeem' : '/workspace');
+      navigate('/profile');
     } catch (err) {
       toast.error(parseError(err, tab === 'login' ? '用户名或密码错误' : '注册失败，请重试'));
     } finally {

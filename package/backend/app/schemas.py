@@ -57,6 +57,7 @@ class UserMeResponse(BaseModel):
     remaining_uses: int
     usage_count: int
     usage_limit: int
+    image_credits: int = 0
     created_at: datetime
     last_login: Optional[datetime] = None
 
@@ -101,7 +102,8 @@ class ChangePasswordRequest(BaseModel):
 
 class CouponCreate(BaseModel):
     """创建卡券"""
-    credits: int = Field(10, ge=1, description="每人兑换获得的使用次数")
+    coupon_type: str = Field('usage', pattern='^(usage|image)$', description="卡券类型: usage=使用次数 / image=图片点数")
+    credits: int = Field(10, ge=1, description="每人兑换获得的次数/点数")
     max_redemptions: int = Field(0, ge=0, description="最多兑换人数，0 表示不限")
     expires_at: Optional[datetime] = Field(None, description="过期时间，null 表示永不过期")
     count: int = Field(1, ge=1, le=100, description="批量生成张数")
@@ -112,16 +114,24 @@ class CouponResponse(BaseModel):
     """卡券响应"""
     id: int
     code: str
-    credits: int                          # 每人兑换获得次数
-    max_redemptions: int = 0             # 最多兑换人数，0=不限
-    used_count: int = 0                  # 已兑换人数
+    coupon_type: str = 'usage'
+    credits: int
+    max_redemptions: int = 0
+    used_count: int = 0
     is_active: bool
     expires_at: Optional[datetime] = None
     created_at: Optional[datetime] = None
-    status: str = "available"            # available / exhausted / expired / disabled
+    status: str = "available"
 
     class Config:
         from_attributes = True
+
+
+class ImageGenerateRequest(BaseModel):
+    """图片生成请求"""
+    prompt: str = Field(..., min_length=1, max_length=4000)
+    size: str = Field('1024x1024', description="尺寸: 1024x1024 / 1024x1536 / 1536x1024")
+    quality: str = Field('standard', pattern='^(standard|hd)$')
 
 
 class ModelConfig(BaseModel):

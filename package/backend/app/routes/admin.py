@@ -1007,6 +1007,7 @@ def _coupon_to_response(coupon: Coupon) -> CouponResponse:
     return CouponResponse(
         id=coupon.id,
         code=coupon.code,
+        coupon_type=getattr(coupon, 'coupon_type', None) or 'usage',
         credits=coupon.credits or coupon.total_uses or 0,
         max_redemptions=coupon.max_redemptions or 0,
         used_count=coupon.used_count or 0,
@@ -1029,6 +1030,7 @@ async def create_coupons(
         code = _generate_code(prefix=data.prefix or "")
         coupon = Coupon(
             code=code,
+            coupon_type=data.coupon_type,
             credits=data.credits,
             max_redemptions=data.max_redemptions,
             expires_at=data.expires_at,

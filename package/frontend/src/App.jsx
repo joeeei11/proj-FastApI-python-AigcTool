@@ -12,6 +12,7 @@ import SpecGeneratorPage from './pages/SpecGeneratorPage';
 import ArticlePreprocessorPage from './pages/ArticlePreprocessorPage';
 import FormatCheckerPage from './pages/FormatCheckerPage';
 import ProfilePage from './pages/ProfilePage';
+import ImageGeneratorPage from './pages/ImageGeneratorPage';
 import './index.css';
 
 // 需要登录才能访问；未登录跳回首页（刷新 = 内存清空 = 回首页）
@@ -35,6 +36,7 @@ function AppRoutes() {
       <Route path="/article-preprocessor" element={<ProtectedRoute><ArticlePreprocessorPage /></ProtectedRoute>} />
       <Route path="/format-checker" element={<ProtectedRoute><FormatCheckerPage /></ProtectedRoute>} />
       <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
+      <Route path="/image-generator" element={<ProtectedRoute><ImageGeneratorPage /></ProtectedRoute>} />
 
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

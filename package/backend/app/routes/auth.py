@@ -125,14 +125,31 @@ async def redeem_coupon(
         raise HTTPException(status_code=400, detail="您已兑换过此卡券")
 
     credits = coupon.credits or coupon.total_uses or 0
+    coupon_type = getattr(coupon, 'coupon_type', None) or 'usage'
+
     redemption = CouponRedemption(coupon_id=coupon.id, user_id=current_user.id)
     db.add(redemption)
     coupon.used_count = (coupon.used_count or 0) + 1
-    current_user.usage_limit += credits
-    db.commit()
 
-    return {
-        "message": f"兑换成功，获得 {credits} 次使用机会",
-        "added_uses": credits,
-        "remaining_uses": current_user.remaining_uses,
-    }
+    if coupon_type == 'image':
+        current_user.image_credits = (current_user.image_credits or 0) + credits
+        db.commit()
+        return {
+            "message": f"兑换成功，获得 {credits} 次图片生成机会",
+            "coupon_type": "image",
+            "added_uses": 0,
+            "added_image_credits": credits,
+            "remaining_uses": current_user.remaining_uses,
+            "image_credits": current_user.image_credits,
+        }
+    else:
+        current_user.usage_limit += credits
+        db.commit()
+        return {
+            "message": f"兑换成功，获得 {credits} 次使用机会",
+            "coupon_type": "usage",
+            "added_uses": credits,
+            "added_image_credits": 0,
+            "remaining_uses": current_user.remaining_uses,
+            "image_credits": current_user.image_credits or 0,
+        }
