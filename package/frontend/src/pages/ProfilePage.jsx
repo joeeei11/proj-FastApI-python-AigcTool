@@ -59,7 +59,7 @@ const TOOLS = [
     color: '#8c8078',
     bg:    'rgba(140,128,120,0.05)',
     border:'rgba(140,128,120,0.12)',
-    beta:  true,
+    beta:  false,
   },
   {
     label: '排版规范生成',
@@ -89,7 +89,7 @@ const TOOLS = [
     color: '#8c8078',
     bg:    'rgba(140,128,120,0.05)',
     border:'rgba(140,128,120,0.12)',
-    beta:  true,
+    beta:  false,
   },
 ];
 

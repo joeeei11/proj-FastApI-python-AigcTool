@@ -348,6 +348,64 @@ async def generate_spec(
         raise HTTPException(status_code=500, detail=f"生成规范失败: {str(e)}")
 
 
+@router.post("/specs/generate-from-file")
+async def generate_spec_from_file(
+    file: UploadFile = File(...),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """从上传的 .docx/.txt 格式说明文件中 AI 提取排版规范"""
+    check_usage_limit(user)
+
+    ext = file.filename.lower().rsplit(".", 1)[-1] if "." in file.filename else ""
+    if ext == "doc":
+        raise HTTPException(status_code=400, detail="暂不支持 .doc 格式，请在 Word 中另存为 .docx 后上传")
+    if ext not in {"docx", "txt"}:
+        raise HTTPException(status_code=400, detail="仅支持 .docx 或 .txt 文件")
+
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="文件内容为空")
+
+    if ext == "docx":
+        from app.word_formatter.utils.docx_text import extract_text_from_docx
+        try:
+            text = extract_text_from_docx(content)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"文件解析失败: {e}")
+    else:
+        try:
+            text = content.decode("utf-8")
+        except UnicodeDecodeError:
+            text = content.decode("gbk", errors="ignore")
+
+    if not text.strip():
+        raise HTTPException(status_code=400, detail="文件中未提取到文本内容")
+
+    extracted_preview = text[:300]
+    if len(text) > 6000:
+        text = text[:6000]
+
+    print(f"\n[WORD-FORMATTER] ========== 文件规范生成请求 ==========", flush=True)
+    print(f"[WORD-FORMATTER] 文件: {file.filename}，提取文本: {len(text)} 字符", flush=True)
+
+    try:
+        ai_service = get_ai_service()
+        spec = await ai_generate_spec(text, ai_service)
+        increment_usage(user, db)
+        spec_name = spec.meta.get("name") or file.filename.rsplit(".", 1)[0]
+        print(f"[WORD-FORMATTER] ✅ 文件规范生成成功: {spec_name}", flush=True)
+        return {
+            "success": True,
+            "spec_json": export_spec_to_json(spec),
+            "spec_name": spec_name,
+            "extracted_preview": extracted_preview,
+        }
+    except Exception as e:
+        print(f"[WORD-FORMATTER] ❌ 文件规范生成失败: {e}", flush=True)
+        raise HTTPException(status_code=500, detail=f"AI 解析失败: {str(e)}")
+
+
 @router.post("/format/text", response_model=JobResponse)
 async def format_text(
     request: FormatRequest,

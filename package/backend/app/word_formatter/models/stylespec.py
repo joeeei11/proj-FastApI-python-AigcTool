@@ -8,6 +8,7 @@ StyleSpec: 可执行排版规范（强约束 JSON）。
 """
 from __future__ import annotations
 
+from enum import Enum
 from typing import Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator
@@ -137,6 +138,37 @@ class PageNumberingSpec(BaseModel):
     footer_alignment: Alignment = "center"
 
 
+class HeaderContent(str, Enum):
+    BLANK = "blank"
+    SCHOOL_NAME = "school_name"
+    THESIS_TITLE = "thesis_title"
+    CHAPTER_TITLE = "chapter_title"
+    CUSTOM = "custom"
+
+
+class HeaderFooterSpec(BaseModel):
+    enabled: bool = False
+    content_type: HeaderContent = HeaderContent.BLANK
+    custom_text: Optional[str] = None
+    font_name: str = "宋体"
+    font_size_pt: float = 10.5
+    alignment: Alignment = "center"
+    bold: bool = False
+    separator_line: bool = True
+
+
+class CrossRefSpec(BaseModel):
+    figure_prefix: str = "图"
+    table_prefix: str = "表"
+    equation_prefix: str = "式"
+    numbering_style: Literal["chapter-seq", "global-seq"] = "chapter-seq"
+    separator: str = "-"
+    caption_position_figure: Literal["below", "above"] = "below"
+    caption_position_table: Literal["above", "below"] = "above"
+    caption_font_size_pt: float = 10.5
+    caption_alignment: Alignment = "center"
+
+
 class StyleSpec(BaseModel):
     meta: Dict[str, str] = Field(default_factory=dict)
     page: PageSpec
@@ -147,6 +179,9 @@ class StyleSpec(BaseModel):
         default_factory=ForbiddenDirectFormatting
     )
     page_numbering: Optional[PageNumberingSpec] = None
+    header: Optional[HeaderFooterSpec] = None
+    footer_content: Optional[HeaderFooterSpec] = None
+    cross_ref: Optional[CrossRefSpec] = None
 
     # Small, deterministic content-normalization switches (optional):
     # They help enforce school templates without letting AI touch OOXML.

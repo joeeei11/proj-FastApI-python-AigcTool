@@ -200,6 +200,14 @@ export const wordFormatterAPI = {
   },
   getPreprocessResult: (jobId) => api.get(`/word-formatter/preprocess/${jobId}/result`),
   deletePreprocessJob: (jobId) => api.delete(`/word-formatter/preprocess/${jobId}`),
+  generateSpecFromFile: (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.post('/word-formatter/specs/generate-from-file', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 120000,
+    });
+  },
   getFormatParagraphTypes: () => api.get('/word-formatter/format-check/types'),
   checkTextFormat: (text, mode = 'loose') =>
     api.post('/word-formatter/format-check/text', { text, mode }, { timeout: 30000 }),

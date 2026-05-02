@@ -1,176 +1,185 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import {
-  ArrowLeft, Sparkles, Save, Download, Trash2, Edit3,
-  Loader2, CheckCircle, AlertCircle, FileText, List,
-  Code, Eye, Settings, Copy
+  Sparkles, Save, Download, Trash2, Edit3,
+  CheckCircle, FileText, List, Code, Eye,
+  Copy, Upload, Paperclip, ChevronDown, ChevronUp,
 } from 'lucide-react';
 import { wordFormatterAPI } from '../api';
+import { useAuth } from '../auth/AuthContext';
+import AnnouncementBell from '../components/AnnouncementBell';
 
-// Preset templates for common document types
 const PRESET_TEMPLATES = [
   {
-    id: 'undergraduate_thesis',
+    id: 'undergraduate',
     name: '本科毕业论文',
-    description: '符合大多数高校本科毕业论文格式要求',
-    requirements: '本科毕业论文格式：标题三号黑体居中，摘要四号宋体，正文小四号宋体1.5倍行距，一级标题三号黑体，二级标题四号黑体，三级标题小四号黑体，参考文献五号宋体，页边距上下2.54cm左右3.17cm',
+    requirements: '本科毕业论文格式：标题三号黑体居中，摘要四号宋体，正文小四号宋体1.5倍行距，一级标题三号黑体，二级标题四号黑体，三级标题小四号黑体，参考文献五号宋体，页边距上下2.54cm左右3.17cm，页眉学校名称居中小五宋体，图注在图下方图×-×格式',
   },
   {
-    id: 'master_thesis',
+    id: 'master',
     name: '硕士学位论文',
-    description: '符合研究生院学位论文格式规范',
-    requirements: '硕士学位论文格式：封面标题二号黑体，摘要小四号宋体，正文小四号宋体1.5倍行距，章标题三号黑体居中，节标题四号黑体，段落首行缩进2字符，参考文献五号宋体悬挂缩进，页边距上下2.54cm左右3cm',
+    requirements: '硕士学位论文格式：封面标题二号黑体，摘要小四号宋体，正文小四号宋体1.5倍行距，章标题三号黑体居中，节标题四号黑体，段落首行缩进2字符，参考文献五号宋体悬挂缩进，页边距上下2.54cm左右3cm，页眉论文题目居中小五宋体',
   },
   {
-    id: 'journal_paper',
+    id: 'journal',
     name: '期刊论文',
-    description: '通用学术期刊论文格式',
     requirements: '期刊论文格式：标题三号黑体居中，作者信息五号宋体居中，摘要小五号宋体，关键词小五号宋体，正文五号宋体单倍行距，一级标题四号黑体，图表标题小五号宋体居中，参考文献小五号宋体',
   },
 ];
 
-const SpecGeneratorPage = () => {
-  const navigate = useNavigate();
+const HEADER_CONTENT_LABELS = {
+  blank: '空白',
+  school_name: '学校名称',
+  thesis_title: '论文题目',
+  chapter_title: '章节标题',
+  custom: '自定义文字',
+};
 
-  // State
+export default function SpecGeneratorPage() {
+  const navigate = useNavigate();
+  const { userInfo, logout } = useAuth();
+  const fileInputRef = useRef(null);
+
+  const [inputTab, setInputTab] = useState('file');
+  const [specFile, setSpecFile] = useState(null);
+  const [extractedPreview, setExtractedPreview] = useState('');
+  const [showPreview, setShowPreview] = useState(false);
+  const [isExtracting, setIsExtracting] = useState(false);
+
   const [requirements, setRequirements] = useState('');
+  const [isGenerating, setIsGenerating] = useState(false);
+
+  const [generatedSpec, setGeneratedSpec] = useState(null);
   const [specName, setSpecName] = useState('');
   const [specDescription, setSpecDescription] = useState('');
-  const [generatedSpec, setGeneratedSpec] = useState(null);
-  const [isGenerating, setIsGenerating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [savedSpecs, setSavedSpecs] = useState([]);
   const [isLoadingSpecs, setIsLoadingSpecs] = useState(false);
-  const [viewMode, setViewMode] = useState('structure'); // 'structure', 'table', 'json'
+  const [viewMode, setViewMode] = useState('structure');
   const [isEditing, setIsEditing] = useState(false);
   const [editedSpecJson, setEditedSpecJson] = useState('');
   const [usage, setUsage] = useState(null);
 
   useEffect(() => {
-    loadSavedSpecs();
     loadUsage();
+    loadSavedSpecs();
   }, []);
 
   const loadUsage = async () => {
     try {
-      const response = await wordFormatterAPI.getUsage();
-      setUsage(response.data);
-    } catch (error) {
-      console.error('Load usage failed:', error);
-    }
+      const res = await wordFormatterAPI.getUsage();
+      setUsage(res.data);
+    } catch {}
   };
 
   const loadSavedSpecs = async () => {
+    setIsLoadingSpecs(true);
     try {
-      setIsLoadingSpecs(true);
-      const response = await wordFormatterAPI.listSavedSpecs();
-      setSavedSpecs(response.data.specs || []);
-    } catch (error) {
-      console.error('Load saved specs failed:', error);
+      const res = await wordFormatterAPI.listSavedSpecs();
+      setSavedSpecs(res.data.specs || []);
+    } catch {
       toast.error('加载已保存规范失败');
     } finally {
       setIsLoadingSpecs(false);
     }
   };
 
-  const handleSelectTemplate = (template) => {
-    setRequirements(template.requirements);
-    setSpecName(template.name);
-    setSpecDescription(template.description);
-    toast.success(`已加载模板: ${template.name}`);
+  const handleFileChange = (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    const ext = f.name.toLowerCase().split('.').pop();
+    if (ext === 'doc') {
+      toast.error('暂不支持 .doc 格式，请在 Word 中另存为 .docx 后上传');
+      return;
+    }
+    setSpecFile(f);
+    setExtractedPreview('');
+    setShowPreview(false);
+  };
+
+  const handleGenerateFromFile = async () => {
+    if (!specFile) { toast.error('请先上传格式说明文件'); return; }
+    try {
+      setIsExtracting(true);
+      const res = await wordFormatterAPI.generateSpecFromFile(specFile);
+      if (res.data.success) {
+        setGeneratedSpec(res.data.spec_json);
+        setEditedSpecJson(res.data.spec_json);
+        setSpecName(res.data.spec_name || 'AI_Generated');
+        setExtractedPreview(res.data.extracted_preview || '');
+        setViewMode('structure');
+        toast.success('格式规范解析成功');
+        loadUsage();
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.detail || '解析失败，请稍后重试');
+    } finally {
+      setIsExtracting(false);
+    }
   };
 
   const handleGenerate = async () => {
-    if (!requirements.trim()) {
-      toast.error('请输入排版要求');
-      return;
-    }
-
-    if (requirements.length < 20) {
-      toast.error('排版要求描述太简短，请提供更详细的要求');
-      return;
-    }
-
+    if (!requirements.trim()) { toast.error('请输入排版要求'); return; }
+    if (requirements.length < 20) { toast.error('描述太简短，请补充更多细节'); return; }
     try {
       setIsGenerating(true);
-      const response = await wordFormatterAPI.generateSpec(requirements);
-
-      if (response.data.success) {
-        setGeneratedSpec(response.data.spec_json);
-        setEditedSpecJson(response.data.spec_json);
-        if (!specName) {
-          setSpecName(response.data.spec_name || 'AI_Generated');
-        }
+      const res = await wordFormatterAPI.generateSpec(requirements);
+      if (res.data.success) {
+        setGeneratedSpec(res.data.spec_json);
+        setEditedSpecJson(res.data.spec_json);
+        if (!specName) setSpecName(res.data.spec_name || 'AI_Generated');
+        setViewMode('structure');
         toast.success('规范生成成功');
-        loadUsage(); // Refresh usage
-      } else {
-        toast.error('规范生成失败');
+        loadUsage();
       }
-    } catch (error) {
-      console.error('Generate spec failed:', error);
-      toast.error(error.response?.data?.detail || '生成规范失败，请稍后重试');
+    } catch (err) {
+      toast.error(err.response?.data?.detail || '生成失败，请稍后重试');
     } finally {
       setIsGenerating(false);
     }
   };
 
   const handleSave = async () => {
-    if (!specName.trim()) {
-      toast.error('请输入规范名称');
-      return;
-    }
-
+    if (!specName.trim()) { toast.error('请输入规范名称'); return; }
     const specJson = isEditing ? editedSpecJson : generatedSpec;
-    if (!specJson) {
-      toast.error('没有可保存的规范');
-      return;
-    }
-
+    if (!specJson) { toast.error('没有可保存的规范'); return; }
     try {
       setIsSaving(true);
       await wordFormatterAPI.saveSpec(specName, specJson, specDescription);
       toast.success('规范保存成功');
       loadSavedSpecs();
-    } catch (error) {
-      console.error('Save spec failed:', error);
-      toast.error(error.response?.data?.detail || '保存规范失败');
+    } catch (err) {
+      toast.error(err.response?.data?.detail || '保存失败');
     } finally {
       setIsSaving(false);
     }
   };
 
-  const handleLoadSpec = async (spec) => {
+  const handleLoadSpec = (spec) => {
     setGeneratedSpec(spec.spec_json);
     setEditedSpecJson(spec.spec_json);
     setSpecName(spec.name);
     setSpecDescription(spec.description || '');
     setIsEditing(false);
+    setViewMode('structure');
     toast.success(`已加载规范: ${spec.name}`);
   };
 
   const handleDeleteSpec = async (specId) => {
-    if (!window.confirm('确定要删除这个规范吗？')) {
-      return;
-    }
-
+    if (!window.confirm('确定删除这个规范吗？')) return;
     try {
       await wordFormatterAPI.deleteSavedSpec(specId);
-      toast.success('规范已删除');
+      toast.success('已删除');
       loadSavedSpecs();
-    } catch (error) {
-      console.error('Delete spec failed:', error);
-      toast.error('删除规范失败');
+    } catch {
+      toast.error('删除失败');
     }
   };
 
   const handleExportJson = () => {
     const specJson = isEditing ? editedSpecJson : generatedSpec;
-    if (!specJson) {
-      toast.error('没有可导出的规范');
-      return;
-    }
-
+    if (!specJson) { toast.error('没有可导出的规范'); return; }
     const blob = new Blob([specJson], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -180,436 +189,479 @@ const SpecGeneratorPage = () => {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    toast.success('规范已导出');
+    toast.success('已导出');
   };
 
   const handleCopyJson = () => {
     const specJson = isEditing ? editedSpecJson : generatedSpec;
-    if (!specJson) {
-      toast.error('没有可复制的规范');
-      return;
-    }
-
+    if (!specJson) { toast.error('没有可复制的规范'); return; }
     navigator.clipboard.writeText(specJson);
-    toast.success('已复制到剪贴板');
+    toast.success('已复制');
   };
 
-  const toggleEditMode = () => {
+  const toggleEdit = () => {
     if (isEditing) {
-      // Validate JSON before exiting edit mode
       try {
         JSON.parse(editedSpecJson);
         setGeneratedSpec(editedSpecJson);
         setIsEditing(false);
         toast.success('规范已更新');
-      } catch (e) {
-        toast.error('JSON 格式无效，请检查');
+      } catch {
+        toast.error('JSON 格式有误，请检查');
       }
     } else {
       setIsEditing(true);
     }
   };
 
-  // Render spec in structured view
   const renderStructuredView = () => {
     if (!generatedSpec) return null;
-
     try {
       const spec = JSON.parse(generatedSpec);
       return (
-        <div className="space-y-4">
-          {/* Meta info */}
-          <div className="bg-gray-50 rounded-lg p-4">
-            <h4 className="font-medium text-gray-900 mb-2">基本信息</h4>
-            <div className="grid grid-cols-2 gap-2 text-sm">
-              <div><span className="text-gray-500">名称:</span> {spec.meta?.name || '-'}</div>
-              <div><span className="text-gray-500">语言:</span> {spec.meta?.lang || '-'}</div>
+        <div style={{ display:'flex', flexDirection:'column', gap:'0.875rem' }}>
+
+          {/* 基本信息 */}
+          <div style={{ background:'rgba(140,120,96,0.06)', borderRadius:8, padding:'0.875rem 1rem' }}>
+            <p style={{ margin:'0 0 0.5rem', fontSize:'0.8rem', fontWeight:700, color:'var(--ink-soft)', textTransform:'uppercase', letterSpacing:'0.05em' }}>基本信息</p>
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0.375rem', fontSize:'0.875rem' }}>
+              <span><span style={{ color:'var(--ink-soft)' }}>名称：</span>{spec.meta?.name || '-'}</span>
+              <span><span style={{ color:'var(--ink-soft)' }}>语言：</span>{spec.meta?.lang || 'zh'}</span>
             </div>
           </div>
 
-          {/* Page layout */}
-          {spec.page_layout && (
-            <div className="bg-gray-50 rounded-lg p-4">
-              <h4 className="font-medium text-gray-900 mb-2">页面布局</h4>
-              <div className="grid grid-cols-2 gap-2 text-sm">
-                <div><span className="text-gray-500">纸张:</span> {spec.page_layout.size || '-'}</div>
-                <div><span className="text-gray-500">方向:</span> {spec.page_layout.orientation || '-'}</div>
-                <div><span className="text-gray-500">上边距:</span> {spec.page_layout.margin_top_cm || '-'} cm</div>
-                <div><span className="text-gray-500">下边距:</span> {spec.page_layout.margin_bottom_cm || '-'} cm</div>
-                <div><span className="text-gray-500">左边距:</span> {spec.page_layout.margin_left_cm || '-'} cm</div>
-                <div><span className="text-gray-500">右边距:</span> {spec.page_layout.margin_right_cm || '-'} cm</div>
+          {/* 页面布局 */}
+          {spec.page && (
+            <div style={{ background:'rgba(140,120,96,0.06)', borderRadius:8, padding:'0.875rem 1rem' }}>
+              <p style={{ margin:'0 0 0.5rem', fontSize:'0.8rem', fontWeight:700, color:'var(--ink-soft)', textTransform:'uppercase', letterSpacing:'0.05em' }}>页面布局</p>
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0.375rem', fontSize:'0.875rem' }}>
+                <span><span style={{ color:'var(--ink-soft)' }}>上边距：</span>{spec.page.margins_mm?.top ?? '-'} mm</span>
+                <span><span style={{ color:'var(--ink-soft)' }}>下边距：</span>{spec.page.margins_mm?.bottom ?? '-'} mm</span>
+                <span><span style={{ color:'var(--ink-soft)' }}>左边距：</span>{spec.page.margins_mm?.left ?? '-'} mm</span>
+                <span><span style={{ color:'var(--ink-soft)' }}>右边距：</span>{spec.page.margins_mm?.right ?? '-'} mm</span>
+                <span><span style={{ color:'var(--ink-soft)' }}>页眉距：</span>{spec.page.header_mm ?? '-'} mm</span>
+                <span><span style={{ color:'var(--ink-soft)' }}>页脚距：</span>{spec.page.footer_mm ?? '-'} mm</span>
               </div>
             </div>
           )}
 
-          {/* Paragraph styles */}
-          {spec.paragraph_styles && (
-            <div className="bg-gray-50 rounded-lg p-4">
-              <h4 className="font-medium text-gray-900 mb-2">段落样式</h4>
-              <div className="space-y-2">
-                {Object.entries(spec.paragraph_styles).map(([key, style]) => (
-                  <div key={key} className="text-sm border-b border-gray-200 pb-2 last:border-0">
-                    <div className="font-medium text-blue-600">{key}</div>
-                    <div className="grid grid-cols-3 gap-1 text-gray-600 mt-1">
-                      <span>字体: {style.font_name_cn || style.font_name_en || '-'}</span>
-                      <span>字号: {style.font_size_pt || '-'}pt</span>
-                      <span>对齐: {style.alignment || '-'}</span>
-                    </div>
+          {/* 页眉设置 */}
+          {spec.header && (
+            <div style={{ background:'rgba(61,90,78,0.06)', borderRadius:8, padding:'0.875rem 1rem', border:'1px solid rgba(61,90,78,0.12)' }}>
+              <p style={{ margin:'0 0 0.5rem', fontSize:'0.8rem', fontWeight:700, color:'#3d5a4e', textTransform:'uppercase', letterSpacing:'0.05em' }}>页眉设置</p>
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0.375rem', fontSize:'0.875rem' }}>
+                <span><span style={{ color:'var(--ink-soft)' }}>启用：</span>{spec.header.enabled ? '是' : '否'}</span>
+                <span><span style={{ color:'var(--ink-soft)' }}>内容：</span>{HEADER_CONTENT_LABELS[spec.header.content_type] || spec.header.content_type}</span>
+                {spec.header.custom_text && <span style={{ gridColumn:'1/-1' }}><span style={{ color:'var(--ink-soft)' }}>自定义文字：</span>{spec.header.custom_text}</span>}
+                <span><span style={{ color:'var(--ink-soft)' }}>字体：</span>{spec.header.font_name}</span>
+                <span><span style={{ color:'var(--ink-soft)' }}>字号：</span>{spec.header.font_size_pt} pt</span>
+                <span><span style={{ color:'var(--ink-soft)' }}>对齐：</span>{{left:'左对齐',center:'居中',right:'右对齐'}[spec.header.alignment] || spec.header.alignment}</span>
+                <span><span style={{ color:'var(--ink-soft)' }}>分隔线：</span>{spec.header.separator_line ? '显示' : '隐藏'}</span>
+              </div>
+            </div>
+          )}
+
+          {/* 段落样式 */}
+          {spec.styles && (
+            <div style={{ background:'rgba(140,120,96,0.06)', borderRadius:8, padding:'0.875rem 1rem' }}>
+              <p style={{ margin:'0 0 0.625rem', fontSize:'0.8rem', fontWeight:700, color:'var(--ink-soft)', textTransform:'uppercase', letterSpacing:'0.05em' }}>段落样式</p>
+              <div style={{ display:'flex', flexDirection:'column', gap:'0.5rem' }}>
+                {Object.entries(spec.styles).map(([key, style]) => (
+                  <div key={key} style={{ paddingBottom:'0.5rem', borderBottom:'1px solid rgba(140,120,96,0.1)' }}>
+                    <span style={{ fontSize:'0.8rem', fontWeight:700, color:'var(--accent)', marginRight:'0.5rem' }}>{style.name || key}</span>
+                    <span style={{ fontSize:'0.8rem', color:'var(--ink-soft)' }}>
+                      {style.run?.font?.eastAsia || '-'} · {style.run?.size_pt || '-'}pt · {style.paragraph?.alignment || '-'} · 行距{style.paragraph?.line_spacing_rule || '-'}
+                    </span>
                   </div>
                 ))}
               </div>
             </div>
           )}
+
+          {/* 交叉引用 */}
+          {spec.cross_ref && (
+            <div style={{ background:'rgba(90,106,142,0.06)', borderRadius:8, padding:'0.875rem 1rem', border:'1px solid rgba(90,106,142,0.12)' }}>
+              <p style={{ margin:'0 0 0.5rem', fontSize:'0.8rem', fontWeight:700, color:'#5a6a8e', textTransform:'uppercase', letterSpacing:'0.05em' }}>图表交叉引用</p>
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0.375rem', fontSize:'0.875rem' }}>
+                <span><span style={{ color:'var(--ink-soft)' }}>图前缀：</span>{spec.cross_ref.figure_prefix}</span>
+                <span><span style={{ color:'var(--ink-soft)' }}>表前缀：</span>{spec.cross_ref.table_prefix}</span>
+                <span><span style={{ color:'var(--ink-soft)' }}>编号格式：</span>{{  'chapter-seq':'含章号（图1-1）','global-seq':'全文连续（图1）'}[spec.cross_ref.numbering_style] || spec.cross_ref.numbering_style}</span>
+                <span><span style={{ color:'var(--ink-soft)' }}>分隔符：</span>「{spec.cross_ref.separator}」</span>
+                <span><span style={{ color:'var(--ink-soft)' }}>图注位置：</span>{{below:'图下方',above:'图上方'}[spec.cross_ref.caption_position_figure]}</span>
+                <span><span style={{ color:'var(--ink-soft)' }}>表注位置：</span>{{above:'表上方',below:'表下方'}[spec.cross_ref.caption_position_table]}</span>
+                <span><span style={{ color:'var(--ink-soft)' }}>图注字号：</span>{spec.cross_ref.caption_font_size_pt} pt</span>
+                <span><span style={{ color:'var(--ink-soft)' }}>图注对齐：</span>{{left:'左对齐',center:'居中',right:'右对齐'}[spec.cross_ref.caption_alignment]}</span>
+              </div>
+            </div>
+          )}
+
+          {/* 页码 */}
+          {spec.page_numbering && (
+            <div style={{ background:'rgba(140,120,96,0.06)', borderRadius:8, padding:'0.875rem 1rem' }}>
+              <p style={{ margin:'0 0 0.5rem', fontSize:'0.8rem', fontWeight:700, color:'var(--ink-soft)', textTransform:'uppercase', letterSpacing:'0.05em' }}>页码设置</p>
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0.375rem', fontSize:'0.875rem' }}>
+                <span><span style={{ color:'var(--ink-soft)' }}>前言格式：</span>{{romanUpper:'罗马大写',romanLower:'罗马小写',decimal:'阿拉伯数字'}[spec.page_numbering.front_format]}</span>
+                <span><span style={{ color:'var(--ink-soft)' }}>正文格式：</span>{{romanUpper:'罗马大写',romanLower:'罗马小写',decimal:'阿拉伯数字'}[spec.page_numbering.main_format]}</span>
+              </div>
+            </div>
+          )}
         </div>
       );
-    } catch (e) {
-      return <div className="text-red-500">JSON 解析失败</div>;
+    } catch {
+      return <p style={{ color:'#8b3a2a', fontSize:'0.875rem' }}>JSON 解析失败</p>;
     }
   };
 
-  // Render spec in table view
   const renderTableView = () => {
     if (!generatedSpec) return null;
-
     try {
       const spec = JSON.parse(generatedSpec);
-      const styles = spec.paragraph_styles || {};
-
+      const styles = spec.styles || {};
       return (
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-sm">
-            <thead className="bg-gray-100">
-              <tr>
-                <th className="px-3 py-2 text-left">样式名称</th>
-                <th className="px-3 py-2 text-left">中文字体</th>
-                <th className="px-3 py-2 text-left">英文字体</th>
-                <th className="px-3 py-2 text-left">字号</th>
-                <th className="px-3 py-2 text-left">对齐</th>
-                <th className="px-3 py-2 text-left">行距</th>
+        <div style={{ overflowX:'auto' }}>
+          <table style={{ width:'100%', fontSize:'0.8rem', borderCollapse:'collapse' }}>
+            <thead>
+              <tr style={{ background:'rgba(140,120,96,0.08)' }}>
+                {['样式', '中文字体', '字号(pt)', '对齐', '行距', '首行缩进'].map(h => (
+                  <th key={h} style={{ padding:'0.5rem 0.75rem', textAlign:'left', fontWeight:600, color:'var(--ink-soft)', whiteSpace:'nowrap' }}>{h}</th>
+                ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-200">
-              {Object.entries(styles).map(([key, style]) => (
-                <tr key={key} className="hover:bg-gray-50">
-                  <td className="px-3 py-2 font-medium text-blue-600">{key}</td>
-                  <td className="px-3 py-2">{style.font_name_cn || '-'}</td>
-                  <td className="px-3 py-2">{style.font_name_en || '-'}</td>
-                  <td className="px-3 py-2">{style.font_size_pt || '-'}pt</td>
-                  <td className="px-3 py-2">{style.alignment || '-'}</td>
-                  <td className="px-3 py-2">{style.line_spacing || '-'}</td>
+            <tbody>
+              {Object.entries(styles).map(([key, s]) => (
+                <tr key={key} style={{ borderBottom:'1px solid rgba(140,120,96,0.08)' }}>
+                  <td style={{ padding:'0.4rem 0.75rem', fontWeight:600, color:'var(--accent)' }}>{s.name || key}</td>
+                  <td style={{ padding:'0.4rem 0.75rem', color:'var(--ink)' }}>{s.run?.font?.eastAsia || '-'}</td>
+                  <td style={{ padding:'0.4rem 0.75rem', color:'var(--ink)' }}>{s.run?.size_pt || '-'}</td>
+                  <td style={{ padding:'0.4rem 0.75rem', color:'var(--ink)' }}>{s.paragraph?.alignment || '-'}</td>
+                  <td style={{ padding:'0.4rem 0.75rem', color:'var(--ink)' }}>{s.paragraph?.line_spacing_rule || '-'}</td>
+                  <td style={{ padding:'0.4rem 0.75rem', color:'var(--ink)' }}>{s.paragraph?.first_line_indent_chars ?? '-'} 字符</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       );
-    } catch (e) {
-      return <div className="text-red-500">JSON 解析失败</div>;
+    } catch {
+      return <p style={{ color:'#8b3a2a', fontSize:'0.875rem' }}>JSON 解析失败</p>;
     }
   };
 
-  return (
-    <div className="min-h-screen bg-gray-100">
-      {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-4 py-3">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Link
-              to="/word-formatter"
-              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </Link>
-            <div>
-              <h1 className="text-lg font-semibold text-gray-900">AI 排版规范生成器</h1>
-              <p className="text-sm text-gray-500">根据您的要求生成自定义排版规范</p>
-            </div>
-          </div>
+  const isLoading = isExtracting || isGenerating;
 
+  return (
+    <div style={{ minHeight:'100vh', display:'flex', flexDirection:'column', background:'linear-gradient(180deg,#fcfaf5 0%,#f2ece1 44%,#f8f5ee 100%)' }}>
+
+      {/* Header */}
+      <header className="header-o">
+        <div style={{ display:'flex', alignItems:'center', gap:'0.75rem', flex:1 }}>
+          <a href="/" className="brand-o">
+            <span className="brand-mark-o" />
+            <span>OriginFlow</span>
+          </a>
+          <span style={{ width:1, height:20, background:'rgba(140,120,96,0.2)', margin:'0 0.25rem' }} />
+          <span style={{ fontSize:'0.875rem', color:'var(--ink-soft)', fontWeight:500 }}>排版规范生成</span>
+        </div>
+        <div style={{ display:'flex', alignItems:'center', gap:'0.75rem' }}>
+          <AnnouncementBell />
+          {userInfo?.username && (
+            <button
+              onClick={() => navigate('/profile')}
+              style={{ display:'flex', alignItems:'center', gap:'0.5rem', background:'none', border:'none', cursor:'pointer', padding:'0.25rem 0.5rem', borderRadius:8, transition:'background 150ms' }}
+              onMouseEnter={e => e.currentTarget.style.background = 'rgba(140,120,96,0.08)'}
+              onMouseLeave={e => e.currentTarget.style.background = 'none'}
+            >
+              <div style={{ width:28, height:28, borderRadius:'50%', background:'linear-gradient(135deg,#3d5a4e,#5f856f)', display:'flex', alignItems:'center', justifyContent:'center', color:'#fdf8f0', fontSize:'0.75rem', fontWeight:700 }}>
+                {userInfo.username[0].toUpperCase()}
+              </div>
+              <span style={{ fontSize:'0.875rem', color:'var(--ink)', fontWeight:500 }}>{userInfo.username}</span>
+              {userInfo.remaining_uses !== undefined && (
+                <span className={userInfo.remaining_uses > 0 ? 'badge-o-green' : 'badge-o-red'} style={{ fontSize:'0.78rem' }}>
+                  余 {userInfo.remaining_uses} 次
+                </span>
+              )}
+            </button>
+          )}
+          <button onClick={() => { logout(); navigate('/'); }} className="btn-o-ghost btn-o-sm" style={{ borderRadius:'999px' }}>退出</button>
+        </div>
+      </header>
+
+      {/* 主内容 */}
+      <main style={{ flex:1, overflowY:'auto', padding:'1.75rem' }} className="custom-scrollbar">
+        <div style={{ maxWidth:720, margin:'0 auto', display:'flex', flexDirection:'column', gap:'1.25rem' }}>
+
+          {/* 使用量 */}
           {usage && (
-            <div className="text-sm text-gray-500">
-              使用量: {usage.usage_count}/{usage.usage_limit > 0 ? usage.usage_limit : '∞'}
+            <div style={{ display:'flex', justifyContent:'flex-end' }}>
+              <span style={{ fontSize:'0.78rem', color:'var(--ink-soft)', opacity:0.7 }}>
+                本月已用 {usage.usage_count}/{usage.usage_limit > 0 ? usage.usage_limit : '∞'} 次
+              </span>
             </div>
           )}
-        </div>
-      </div>
 
-      <div className="max-w-7xl mx-auto p-4">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Left Panel - Input */}
-          <div className="space-y-4">
-            {/* Preset Templates */}
-            <div className="bg-white rounded-xl shadow-sm p-4">
-              <h3 className="font-medium text-gray-900 mb-3">常用模板</h3>
-              <div className="grid grid-cols-1 gap-2">
-                {PRESET_TEMPLATES.map((template) => (
-                  <button
-                    key={template.id}
-                    onClick={() => handleSelectTemplate(template)}
-                    className="text-left p-3 rounded-lg border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-colors"
-                  >
-                    <div className="font-medium text-gray-900">{template.name}</div>
-                    <div className="text-sm text-gray-500">{template.description}</div>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Requirements Input */}
-            <div className="bg-white rounded-xl shadow-sm p-4">
-              <h3 className="font-medium text-gray-900 mb-3">排版要求描述</h3>
-              <textarea
-                value={requirements}
-                onChange={(e) => setRequirements(e.target.value)}
-                placeholder="请详细描述您的排版要求，例如：标题使用什么字体、字号，正文行距多少，页边距设置等..."
-                className="w-full h-40 p-3 border border-gray-200 rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-              <div className="flex justify-between items-center mt-3">
-                <span className="text-sm text-gray-500">{requirements.length} 字符</span>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => setRequirements('')}
-                    className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-                  >
-                    清空
-                  </button>
-                  <button
-                    onClick={handleGenerate}
-                    disabled={isGenerating || !requirements.trim()}
-                    className="px-4 py-1.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 transition-colors"
-                  >
-                    {isGenerating ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        生成中...
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles className="w-4 h-4" />
-                        生成规范
-                      </>
-                    )}
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Saved Specs List */}
-            <div className="bg-white rounded-xl shadow-sm p-4">
-              <h3 className="font-medium text-gray-900 mb-3">已保存的规范</h3>
-              {isLoadingSpecs ? (
-                <div className="flex items-center justify-center py-8">
-                  <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
-                </div>
-              ) : savedSpecs.length === 0 ? (
-                <div className="text-center py-8 text-gray-500">
-                  暂无保存的规范
-                </div>
-              ) : (
-                <div className="space-y-2 max-h-60 overflow-y-auto">
-                  {savedSpecs.map((spec) => (
-                    <div
-                      key={spec.id}
-                      className="flex items-center justify-between p-3 rounded-lg border border-gray-200 hover:bg-gray-50"
-                    >
-                      <div
-                        className="flex-1 cursor-pointer"
-                        onClick={() => handleLoadSpec(spec)}
-                      >
-                        <div className="font-medium text-gray-900">{spec.name}</div>
-                        {spec.description && (
-                          <div className="text-sm text-gray-500">{spec.description}</div>
-                        )}
-                        <div className="text-xs text-gray-400 mt-1">
-                          更新于 {new Date(spec.updated_at).toLocaleString()}
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => handleDeleteSpec(spec.id)}
-                        className="p-2 text-gray-400 hover:text-red-500 transition-colors"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+          {/* 输入方式 Tab */}
+          <div style={{ display:'flex', gap:'0.5rem' }}>
+            <button className={`chip-o${inputTab === 'file' ? ' selected' : ''}`} onClick={() => setInputTab('file')}>
+              <Upload size={13} style={{ marginRight:'0.3rem' }} />上传格式文件
+            </button>
+            <button className={`chip-o${inputTab === 'text' ? ' selected' : ''}`} onClick={() => setInputTab('text')}>
+              <Edit3 size={13} style={{ marginRight:'0.3rem' }} />文字描述
+            </button>
           </div>
 
-          {/* Right Panel - Preview */}
-          <div className="space-y-4">
-            {/* Spec Name & Description */}
-            {generatedSpec && (
-              <div className="bg-white rounded-xl shadow-sm p-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      规范名称
-                    </label>
-                    <input
-                      type="text"
-                      value={specName}
-                      onChange={(e) => setSpecName(e.target.value)}
-                      placeholder="输入规范名称"
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      规范描述
-                    </label>
-                    <input
-                      type="text"
-                      value={specDescription}
-                      onChange={(e) => setSpecDescription(e.target.value)}
-                      placeholder="可选描述"
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
+          {/* 输入卡片 */}
+          <div className="card-o" style={{ overflow:'hidden' }}>
 
-            {/* Spec Preview */}
-            <div className="bg-white rounded-xl shadow-sm p-4">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="font-medium text-gray-900">规范预览</h3>
-                {generatedSpec && (
-                  <div className="flex items-center gap-2">
-                    {/* View Mode Switcher */}
-                    <div className="flex bg-gray-100 rounded-lg p-0.5">
-                      <button
-                        onClick={() => setViewMode('structure')}
-                        className={`px-2 py-1 text-sm rounded-md transition-colors ${
-                          viewMode === 'structure'
-                            ? 'bg-white text-blue-600 shadow-sm'
-                            : 'text-gray-600'
-                        }`}
-                      >
-                        <List className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => setViewMode('table')}
-                        className={`px-2 py-1 text-sm rounded-md transition-colors ${
-                          viewMode === 'table'
-                            ? 'bg-white text-blue-600 shadow-sm'
-                            : 'text-gray-600'
-                        }`}
-                      >
-                        <FileText className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => setViewMode('json')}
-                        className={`px-2 py-1 text-sm rounded-md transition-colors ${
-                          viewMode === 'json'
-                            ? 'bg-white text-blue-600 shadow-sm'
-                            : 'text-gray-600'
-                        }`}
-                      >
-                        <Code className="w-4 h-4" />
-                      </button>
+            {/* Tab: 上传文件 */}
+            {inputTab === 'file' && (
+              <div style={{ padding:'1.25rem' }}>
+                <input ref={fileInputRef} type="file" accept=".docx,.txt" style={{ display:'none' }} onChange={handleFileChange} />
+
+                {/* 上传区域 */}
+                <div
+                  onClick={() => fileInputRef.current?.click()}
+                  style={{
+                    border:'2px dashed rgba(140,120,96,0.3)', borderRadius:10,
+                    padding:'2rem 1.5rem', cursor:'pointer', textAlign:'center',
+                    background: specFile ? 'rgba(61,90,78,0.04)' : 'transparent',
+                    transition:'border-color 150ms, background 150ms',
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.borderColor = 'rgba(61,90,78,0.5)'}
+                  onMouseLeave={e => e.currentTarget.style.borderColor = 'rgba(140,120,96,0.3)'}
+                >
+                  {specFile ? (
+                    <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:'0.5rem' }}>
+                      <CheckCircle size={18} style={{ color:'#3d5a4e' }} />
+                      <span style={{ fontWeight:600, color:'var(--ink)' }}>{specFile.name}</span>
+                      <span style={{ fontSize:'0.78rem', color:'var(--ink-soft)' }}>（点击重新选择）</span>
                     </div>
+                  ) : (
+                    <>
+                      <Paperclip size={24} style={{ color:'rgba(140,120,96,0.4)', margin:'0 auto 0.5rem', display:'block' }} />
+                      <p style={{ margin:0, fontSize:'0.9rem', color:'var(--ink-soft)', fontWeight:500 }}>点击上传学校格式说明文件</p>
+                      <p style={{ margin:'0.25rem 0 0', fontSize:'0.78rem', color:'var(--ink-soft)', opacity:0.7 }}>支持 .docx · .txt（不支持旧版 .doc）</p>
+                    </>
+                  )}
+                </div>
 
-                    {viewMode === 'json' && (
-                      <button
-                        onClick={toggleEditMode}
-                        className={`px-2 py-1 text-sm rounded-lg transition-colors ${
-                          isEditing
-                            ? 'bg-green-100 text-green-700'
-                            : 'bg-gray-100 text-gray-600'
-                        }`}
-                      >
-                        {isEditing ? (
-                          <CheckCircle className="w-4 h-4" />
-                        ) : (
-                          <Edit3 className="w-4 h-4" />
-                        )}
-                      </button>
+                {/* 文本预览 */}
+                {extractedPreview && (
+                  <div style={{ marginTop:'0.875rem', background:'rgba(140,120,96,0.06)', borderRadius:8, overflow:'hidden' }}>
+                    <button
+                      onClick={() => setShowPreview(v => !v)}
+                      style={{ width:'100%', display:'flex', alignItems:'center', justifyContent:'space-between', padding:'0.5rem 0.875rem', background:'none', border:'none', cursor:'pointer', color:'var(--ink-soft)', fontSize:'0.8rem', fontWeight:600 }}
+                    >
+                      <span>文档内容预览</span>
+                      {showPreview ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                    </button>
+                    {showPreview && (
+                      <p style={{ margin:0, padding:'0 0.875rem 0.75rem', fontSize:'0.78rem', color:'var(--ink-soft)', lineHeight:1.7 }}>
+                        {extractedPreview}…
+                      </p>
                     )}
                   </div>
                 )}
-              </div>
 
-              {!generatedSpec ? (
-                <div className="flex flex-col items-center justify-center py-16 text-gray-400">
-                  <Settings className="w-12 h-12 mb-3" />
-                  <p>输入排版要求并点击"生成规范"</p>
-                </div>
-              ) : (
-                <div className="border border-gray-200 rounded-lg p-4 max-h-[400px] overflow-y-auto">
-                  {viewMode === 'structure' && renderStructuredView()}
-                  {viewMode === 'table' && renderTableView()}
-                  {viewMode === 'json' && (
-                    isEditing ? (
-                      <textarea
-                        value={editedSpecJson}
-                        onChange={(e) => setEditedSpecJson(e.target.value)}
-                        className="w-full h-80 font-mono text-sm p-2 border-0 focus:ring-0 resize-none"
-                      />
-                    ) : (
-                      <pre className="text-sm font-mono whitespace-pre-wrap">
-                        {JSON.stringify(JSON.parse(generatedSpec), null, 2)}
-                      </pre>
-                    )
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Action Buttons */}
-            {generatedSpec && (
-              <div className="bg-white rounded-xl shadow-sm p-4">
-                <div className="flex flex-wrap gap-2">
+                <div style={{ display:'flex', justifyContent:'flex-end', marginTop:'1rem' }}>
                   <button
-                    onClick={handleSave}
-                    disabled={isSaving}
-                    className="flex-1 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 flex items-center justify-center gap-2 transition-colors"
+                    className="btn-o-primary"
+                    disabled={!specFile || isExtracting}
+                    onClick={handleGenerateFromFile}
+                    style={{ gap:'0.5rem' }}
                   >
-                    {isSaving ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
+                    {isExtracting ? (
+                      <><span style={{ width:14, height:14, border:'2px solid rgba(255,248,240,0.3)', borderTopColor:'#fdf8f0', borderRadius:'50%', display:'inline-block', animation:'spin 1s linear infinite' }} />解析中…</>
                     ) : (
-                      <Save className="w-4 h-4" />
+                      <><Sparkles size={14} />AI 解析格式要求</>
                     )}
-                    保存规范
-                  </button>
-                  <button
-                    onClick={handleExportJson}
-                    className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 flex items-center gap-2 transition-colors"
-                  >
-                    <Download className="w-4 h-4" />
-                    导出 JSON
-                  </button>
-                  <button
-                    onClick={handleCopyJson}
-                    className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 flex items-center gap-2 transition-colors"
-                  >
-                    <Copy className="w-4 h-4" />
-                    复制
                   </button>
                 </div>
+              </div>
+            )}
 
-                <div className="mt-4 pt-4 border-t border-gray-200">
+            {/* Tab: 文字描述 */}
+            {inputTab === 'text' && (
+              <div style={{ padding:'1.25rem' }}>
+                <p className="text-o-label" style={{ marginBottom:'0.75rem' }}>常用模板</p>
+                <div style={{ display:'flex', flexWrap:'wrap', gap:'0.5rem', marginBottom:'1rem' }}>
+                  {PRESET_TEMPLATES.map(t => (
+                    <button key={t.id} className="chip-o" onClick={() => { setRequirements(t.requirements); setSpecName(t.name); }}>
+                      {t.name}
+                    </button>
+                  ))}
+                </div>
+                <textarea
+                  value={requirements}
+                  onChange={e => setRequirements(e.target.value)}
+                  placeholder="请详细描述排版要求，例如：标题三号黑体居中，正文小四号宋体1.5倍行距，页边距上下2.54cm，页眉学校名称居中小五宋体…"
+                  style={{
+                    display:'block', width:'100%', minHeight:160, padding:'1rem',
+                    background:'rgba(140,120,96,0.04)', border:'none', borderRadius:8,
+                    resize:'none', outline:'none',
+                    fontFamily:'Manrope,sans-serif', fontSize:'0.95rem',
+                    color:'var(--ink)', lineHeight:1.75,
+                  }}
+                />
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginTop:'0.75rem' }}>
+                  <span style={{ fontSize:'0.78rem', color:'var(--ink-soft)', opacity:0.7 }}>{requirements.length} 字符</span>
                   <button
-                    onClick={() => navigate('/format-checker', {
-                      state: {
-                        specJson: isEditing ? editedSpecJson : generatedSpec,
-                        specName: specName,
-                      }
-                    })}
-                    className="w-full px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 flex items-center justify-center gap-2 transition-colors"
+                    className="btn-o-primary"
+                    disabled={isGenerating || !requirements.trim()}
+                    onClick={handleGenerate}
+                    style={{ gap:'0.5rem' }}
                   >
-                    下一步: 格式检测
-                    <ArrowLeft className="w-4 h-4 rotate-180" />
+                    {isGenerating ? (
+                      <><span style={{ width:14, height:14, border:'2px solid rgba(255,248,240,0.3)', borderTopColor:'#fdf8f0', borderRadius:'50%', display:'inline-block', animation:'spin 1s linear infinite' }} />生成中…</>
+                    ) : (
+                      <><Sparkles size={14} />生成规范</>
+                    )}
                   </button>
                 </div>
               </div>
             )}
           </div>
+
+          {/* 规范结果 */}
+          {generatedSpec && (
+            <div className="card-o" style={{ overflow:'hidden' }}>
+              {/* 规范名称 */}
+              <div style={{ padding:'1rem 1.25rem', borderBottom:'1px solid rgba(140,120,96,0.1)', display:'flex', gap:'0.75rem', alignItems:'center' }}>
+                <input
+                  value={specName}
+                  onChange={e => setSpecName(e.target.value)}
+                  placeholder="规范名称"
+                  style={{
+                    flex:1, padding:'0.4rem 0.75rem', borderRadius:6,
+                    border:'1px solid rgba(140,120,96,0.2)', background:'rgba(255,251,244,0.8)',
+                    fontFamily:'Manrope,sans-serif', fontSize:'0.875rem', color:'var(--ink)', outline:'none',
+                  }}
+                />
+                <input
+                  value={specDescription}
+                  onChange={e => setSpecDescription(e.target.value)}
+                  placeholder="备注说明（可选）"
+                  style={{
+                    flex:1, padding:'0.4rem 0.75rem', borderRadius:6,
+                    border:'1px solid rgba(140,120,96,0.2)', background:'rgba(255,251,244,0.8)',
+                    fontFamily:'Manrope,sans-serif', fontSize:'0.875rem', color:'var(--ink)', outline:'none',
+                  }}
+                />
+              </div>
+
+              {/* 视图切换 */}
+              <div style={{ padding:'0.75rem 1.25rem', borderBottom:'1px solid rgba(140,120,96,0.1)', display:'flex', gap:'0.5rem', alignItems:'center' }}>
+                {[
+                  { key:'structure', icon:<Eye size={12}/>, label:'结构化' },
+                  { key:'table',     icon:<List size={12}/>, label:'表格' },
+                  { key:'json',      icon:<Code size={12}/>, label:'JSON' },
+                ].map(v => (
+                  <button key={v.key} className={`chip-o${viewMode===v.key?' selected':''}`} onClick={() => setViewMode(v.key)}
+                    style={{ display:'flex', alignItems:'center', gap:'0.3rem', fontSize:'0.8rem' }}>
+                    {v.icon}{v.label}
+                  </button>
+                ))}
+                <div style={{ marginLeft:'auto', display:'flex', gap:'0.5rem' }}>
+                  <button className="btn-o-ghost btn-o-sm" onClick={toggleEdit} style={{ display:'flex', alignItems:'center', gap:'0.3rem', fontSize:'0.78rem' }}>
+                    <Edit3 size={12} />{isEditing ? '完成编辑' : '编辑 JSON'}
+                  </button>
+                </div>
+              </div>
+
+              {/* 内容区 */}
+              <div style={{ padding:'1rem 1.25rem', maxHeight:420, overflowY:'auto' }} className="custom-scrollbar">
+                {viewMode === 'structure' && renderStructuredView()}
+                {viewMode === 'table' && renderTableView()}
+                {viewMode === 'json' && (
+                  isEditing ? (
+                    <textarea
+                      value={editedSpecJson}
+                      onChange={e => setEditedSpecJson(e.target.value)}
+                      style={{
+                        width:'100%', height:320, fontFamily:'monospace', fontSize:'0.8rem',
+                        background:'rgba(140,120,96,0.04)', border:'none', outline:'none',
+                        resize:'vertical', color:'var(--ink)', lineHeight:1.6, padding:'0.5rem',
+                      }}
+                    />
+                  ) : (
+                    <pre style={{ margin:0, fontFamily:'monospace', fontSize:'0.78rem', color:'var(--ink)', lineHeight:1.6, whiteSpace:'pre-wrap', wordBreak:'break-all' }}>
+                      {JSON.stringify(JSON.parse(generatedSpec), null, 2)}
+                    </pre>
+                  )
+                )}
+              </div>
+
+              {/* 操作按钮 */}
+              <div style={{ padding:'0.875rem 1.25rem', borderTop:'1px solid rgba(140,120,96,0.1)', display:'flex', gap:'0.5rem', flexWrap:'wrap' }}>
+                <button className="btn-o-primary" onClick={handleSave} disabled={isSaving} style={{ gap:'0.4rem', flex:1 }}>
+                  {isSaving ? (
+                    <><span style={{ width:13, height:13, border:'2px solid rgba(255,248,240,0.3)', borderTopColor:'#fdf8f0', borderRadius:'50%', display:'inline-block', animation:'spin 1s linear infinite' }} />保存中…</>
+                  ) : (
+                    <><Save size={13} />保存规范</>
+                  )}
+                </button>
+                <button className="btn-o-ghost btn-o-sm" onClick={handleExportJson} style={{ display:'flex', alignItems:'center', gap:'0.3rem' }}>
+                  <Download size={13} />导出
+                </button>
+                <button className="btn-o-ghost btn-o-sm" onClick={handleCopyJson} style={{ display:'flex', alignItems:'center', gap:'0.3rem' }}>
+                  <Copy size={13} />复制
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* 已保存规范 */}
+          <div className="card-o" style={{ overflow:'hidden' }}>
+            <div style={{ padding:'0.875rem 1.25rem', borderBottom:'1px solid rgba(140,120,96,0.1)', display:'flex', alignItems:'center', gap:'0.5rem' }}>
+              <FileText size={15} style={{ color:'var(--ink-soft)' }} />
+              <span style={{ fontSize:'0.875rem', fontWeight:600, color:'var(--ink)' }}>已保存的规范</span>
+              {savedSpecs.length > 0 && (
+                <span style={{ marginLeft:'auto', fontSize:'0.75rem', color:'var(--ink-soft)', opacity:0.7 }}>{savedSpecs.length} 条</span>
+              )}
+            </div>
+
+            {isLoadingSpecs ? (
+              <div style={{ padding:'2rem', display:'flex', justifyContent:'center' }}>
+                <span style={{ width:20, height:20, border:'2px solid rgba(140,120,96,0.2)', borderTopColor:'var(--green)', borderRadius:'50%', display:'inline-block', animation:'spin 1s linear infinite' }} />
+              </div>
+            ) : savedSpecs.length === 0 ? (
+              <div style={{ padding:'2.5rem', textAlign:'center' }}>
+                <FileText size={28} style={{ color:'rgba(140,120,96,0.25)', margin:'0 auto 0.5rem', display:'block' }} />
+                <p style={{ margin:0, fontSize:'0.875rem', color:'var(--ink-soft)', opacity:0.6 }}>暂无保存的规范</p>
+              </div>
+            ) : (
+              <div>
+                {savedSpecs.map(s => (
+                  <div
+                    key={s.id}
+                    style={{ padding:'0.75rem 1.25rem', borderBottom:'1px solid rgba(140,120,96,0.08)', display:'flex', alignItems:'center', gap:'0.75rem' }}
+                  >
+                    <div style={{ flex:1, cursor:'pointer' }} onClick={() => handleLoadSpec(s)}>
+                      <p style={{ margin:0, fontSize:'0.875rem', fontWeight:600, color:'var(--ink)' }}>{s.name}</p>
+                      {s.description && <p style={{ margin:'0.1rem 0 0', fontSize:'0.78rem', color:'var(--ink-soft)', opacity:0.8 }}>{s.description}</p>}
+                    </div>
+                    <button
+                      onClick={() => handleLoadSpec(s)}
+                      className="btn-o-ghost btn-o-sm"
+                      style={{ fontSize:'0.78rem', whiteSpace:'nowrap' }}
+                    >
+                      加载
+                    </button>
+                    <button
+                      onClick={() => handleDeleteSpec(s.id)}
+                      style={{ padding:'0.25rem', borderRadius:6, background:'none', border:'none', color:'rgba(92,74,56,0.35)', cursor:'pointer', transition:'all 150ms' }}
+                      onMouseEnter={e => { e.currentTarget.style.color='#8b3a2a'; e.currentTarget.style.background='rgba(180,70,50,0.08)'; }}
+                      onMouseLeave={e => { e.currentTarget.style.color='rgba(92,74,56,0.35)'; e.currentTarget.style.background='none'; }}
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
         </div>
-      </div>
+      </main>
     </div>
   );
-};
-
-export default SpecGeneratorPage;
+}

@@ -14,7 +14,7 @@ from docx.enum.section import WD_SECTION
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
-from docx.shared import Mm
+from docx.shared import Mm, Pt
 
 from ..models.ast import (
     BibliographyBlock,
@@ -29,7 +29,7 @@ from ..models.ast import (
     SectionBreakBlock,
     TableBlock,
 )
-from ..models.stylespec import StyleSpec
+from ..models.stylespec import HeaderContent, StyleSpec
 
 
 def _align_to_docx(align: str):
@@ -503,6 +503,8 @@ def render_docx(
                     p.style = doc.styles["Reference"]
             continue
 
+    _ensure_header_content(doc, spec)
+
     out = io.BytesIO()
     doc.save(out)
     data = out.getvalue()
@@ -536,6 +538,45 @@ def _render_cover(doc: Document, ast: DocumentAST) -> None:
         p = doc.add_paragraph(line)
         if "MetaLine" in doc.styles:
             p.style = doc.styles["MetaLine"]
+
+
+def _ensure_header_content(doc: Document, spec: StyleSpec) -> None:
+    h = spec.header
+    if not h or not h.enabled or h.content_type == HeaderContent.BLANK:
+        return
+
+    _CONTENT_PLACEHOLDER = {
+        HeaderContent.SCHOOL_NAME: "（学校名称）",
+        HeaderContent.THESIS_TITLE: "（论文标题）",
+        HeaderContent.CHAPTER_TITLE: "（章节标题）",
+    }
+    text = h.custom_text or _CONTENT_PLACEHOLDER.get(h.content_type, "")
+    if not text:
+        return
+
+    for section in doc.sections:
+        section.different_first_page_header_footer = False
+        header = section.header
+        p = header.paragraphs[0] if header.paragraphs else header.add_paragraph()
+        for r in list(p.runs):
+            try:
+                p._p.remove(r._r)
+            except Exception:
+                pass
+        p.alignment = _align_to_docx(h.alignment)
+        run = p.add_run(text)
+        run.bold = h.bold
+        run.font.size = Pt(h.font_size_pt)
+        run.font.name = h.font_name
+        run._element.get_or_add_rPr().get_or_add_rFonts().set(qn('w:eastAsia'), h.font_name)
+
+        if not h.separator_line:
+            pPr = p._element.get_or_add_pPr()
+            pBdr = OxmlElement('w:pBdr')
+            bottom = OxmlElement('w:bottom')
+            bottom.set(qn('w:val'), 'none')
+            pBdr.append(bottom)
+            pPr.append(pBdr)
 
 
 def _ensure_footer_page_numbers(doc: Document, spec: StyleSpec) -> None:
