@@ -53,12 +53,16 @@ def _apply_spec_styles(doc: Document, spec) -> None:
         'double': WD_LINE_SPACING.DOUBLE,
     }
 
+    # 将我们的逻辑 style_id 映射到 Word 内置样式名
+    _TOC_MAP = {'Toc1': 'TOC 1', 'Toc2': 'TOC 2', 'Toc3': 'TOC 3'}
+
     for style_id, style_def in spec.styles.items():
+        word_style_name = _TOC_MAP.get(style_id, style_id)
         try:
-            if style_id in doc.styles:
-                word_style = doc.styles[style_id]
+            if word_style_name in doc.styles:
+                word_style = doc.styles[word_style_name]
             else:
-                word_style = doc.styles.add_style(style_id, WD_STYLE_TYPE.PARAGRAPH)
+                word_style = doc.styles.add_style(word_style_name, WD_STYLE_TYPE.PARAGRAPH)
         except Exception:
             continue
 
@@ -116,8 +120,17 @@ def _apply_spec_styles(doc: Document, spec) -> None:
                 pf.line_spacing_rule = WD_LINE_SPACING.EXACTLY
                 pf.line_spacing      = Pt(para_spec.line_spacing)
 
-            # 首行缩进：字符数 × 字号pt
-            if para_spec.first_line_indent_chars:
+            # 左缩进（绝对 pt，用于目录条目等）
+            if getattr(para_spec, 'left_indent_pt', None):
+                pf.left_indent = Pt(para_spec.left_indent_pt)
+
+            # 悬挂缩进 or 首行缩进（互斥：hanging 优先）
+            hanging = getattr(para_spec, 'hanging_indent_chars', 0) or 0
+            if hanging:
+                hang_pt = hanging * run_spec.size_pt
+                pf.left_indent       = Pt(hang_pt)
+                pf.first_line_indent = Pt(-hang_pt)
+            elif para_spec.first_line_indent_chars:
                 pf.first_line_indent = Pt(para_spec.first_line_indent_chars * run_spec.size_pt)
             else:
                 pf.first_line_indent = Pt(0)

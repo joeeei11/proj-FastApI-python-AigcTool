@@ -42,8 +42,9 @@ const SPACING_OPTS = [
   { label: '固定值', v: 'exact' },
 ];
 const STYLE_GROUPS = [
-  { label: '标题类', ids: ['TitleCN', 'TitleEN', 'FrontHeading', 'TocTitle', 'H1', 'H2', 'H3'] },
+  { label: '标题类', ids: ['TitleCN', 'TitleEN', 'FrontHeading', 'TocTitle', 'H1', 'H2', 'H3', 'AcknowledgementTitle', 'AppendixTitle'] },
   { label: '正文类', ids: ['Body', 'AbstractBody', 'KeywordsBody', 'AcknowledgementBody', 'Reference', 'ListBullet', 'ListNumber'] },
+  { label: '目录类', ids: ['Toc1', 'Toc2', 'Toc3'] },
   { label: '辅助类', ids: ['MetaLine', 'FigureCaption', 'TableTitle', 'TableText', 'PageNumber'] },
 ];
 // O-design 表单控件公共样式
@@ -106,7 +107,7 @@ export default function SpecGeneratorPage() {
   const [editedSpecJson, setEditedSpecJson] = useState('');
   const [usage, setUsage] = useState(null);
   const [parsedSpec, setParsedSpec] = useState(null);
-  const [collapsedGroups, setCollapsedGroups] = useState({ '辅助类': true });
+  const [collapsedGroups, setCollapsedGroups] = useState({ '辅助类': true, '目录类': true });
 
   const updateSpec = (updater) => {
     setParsedSpec(prev => {

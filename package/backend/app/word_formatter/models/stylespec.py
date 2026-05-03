@@ -57,7 +57,8 @@ class StyleParagraph(BaseModel):
         None, ge=0, description="段后间距（行），例如 0.5 表示半行"
     )
     first_line_indent_chars: float = Field(0, ge=0, description="首行缩进（字符数）")
-    hanging_indent_chars: float = Field(0, ge=0, description="悬挂缩进（字符数）")
+    hanging_indent_chars: float = Field(0, ge=0, description="悬挂缩进（字符数），同时设置左缩进=n×字号pt，首行缩进=-n×字号pt")
+    left_indent_pt: Optional[float] = Field(None, ge=0, description="左缩进（pt），用于目录条目等绝对缩进场景")
     keep_with_next: bool = False
     keep_lines: bool = False
     page_break_before: bool = False
