@@ -367,42 +367,61 @@ async def generate_spec_from_file(
     if not content:
         raise HTTPException(status_code=400, detail="文件内容为空")
 
+    comments_count = 0
+    styles_count = 0
+    extracted_preview = ""
+    rich_input = ""
+
     if ext == "docx":
-        from app.word_formatter.utils.docx_text import extract_text_from_docx
+        from app.word_formatter.utils.docx_inspector import inspect_docx
         try:
-            text = extract_text_from_docx(content)
+            inspection = inspect_docx(content)
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"文件解析失败: {e}")
+        text = inspection["text"]
+        comments = inspection["comments"]
+        format_summary = inspection["format_summary"]
+        comments_count = len(comments)
+        styles_count = len(inspection["styles_detected"])
+
+        if not text.strip():
+            raise HTTPException(status_code=400, detail="文件中未提取到文本内容")
+
+        extracted_preview = text[:300]
+
+        # 拼接富内容字符串传给 AI（优先级：批注 > 样式元数据 > 正文）
+        if format_summary:
+            rich_input += f"{format_summary}\n\n"
+        rich_input += f"[文档正文]\n{text[:4000]}"
     else:
         try:
             text = content.decode("utf-8")
         except UnicodeDecodeError:
             text = content.decode("gbk", errors="ignore")
-
-    if not text.strip():
-        raise HTTPException(status_code=400, detail="文件中未提取到文本内容")
-
-    extracted_preview = text[:300]
-    if len(text) > 6000:
-        text = text[:6000]
+        if not text.strip():
+            raise HTTPException(status_code=400, detail="文件中未提取到文本内容")
+        extracted_preview = text[:300]
+        rich_input = text[:6000]
 
     print(f"\n[WORD-FORMATTER] ========== 文件规范生成请求 ==========", flush=True)
-    print(f"[WORD-FORMATTER] 文件: {file.filename}，提取文本: {len(text)} 字符", flush=True)
+    print(f"[WORD-FORMATTER] 文件: {file.filename}，文本: {len(text)} 字符，批注: {comments_count} 条，样式: {styles_count} 个", flush=True)
 
     try:
         ai_service = get_ai_service()
-        spec = await ai_generate_spec(text, ai_service)
+        spec = await ai_generate_spec(rich_input, ai_service)
         increment_usage(user, db)
         spec_name = spec.meta.get("name") or file.filename.rsplit(".", 1)[0]
-        print(f"[WORD-FORMATTER] ✅ 文件规范生成成功: {spec_name}", flush=True)
+        print(f"[WORD-FORMATTER] 文件规范生成成功: {spec_name}", flush=True)
         return {
             "success": True,
             "spec_json": export_spec_to_json(spec),
             "spec_name": spec_name,
             "extracted_preview": extracted_preview,
+            "comments_count": comments_count,
+            "styles_count": styles_count,
         }
     except Exception as e:
-        print(f"[WORD-FORMATTER] ❌ 文件规范生成失败: {e}", flush=True)
+        print(f"[WORD-FORMATTER] 文件规范生成失败: {e}", flush=True)
         raise HTTPException(status_code=500, detail=f"AI 解析失败: {str(e)}")
 
 

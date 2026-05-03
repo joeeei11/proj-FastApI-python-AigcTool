@@ -4,11 +4,56 @@ import toast from 'react-hot-toast';
 import {
   Sparkles, Save, Download, Trash2, Edit3,
   CheckCircle, FileText, List, Code, Eye,
-  Copy, Upload, Paperclip, ChevronDown, ChevronUp,
+  Copy, Upload, Paperclip, ChevronDown, ChevronUp, ChevronRight,
 } from 'lucide-react';
 import { wordFormatterAPI } from '../api';
 import { useAuth } from '../auth/AuthContext';
 import AnnouncementBell from '../components/AnnouncementBell';
+
+// ── 表单选项常量 ──────────────────────────────────
+const CN_FONTS = [
+  { label: '宋体', v: 'SimSun' },
+  { label: '黑体', v: 'SimHei' },
+  { label: '仿宋', v: 'FangSong' },
+  { label: '楷体', v: 'KaiTi' },
+  { label: '微软雅黑', v: 'Microsoft YaHei' },
+];
+const CN_SIZES = [
+  { label: '二号 22pt', v: 22 },
+  { label: '小二 18pt', v: 18 },
+  { label: '三号 16pt', v: 16 },
+  { label: '小三 15pt', v: 15 },
+  { label: '四号 14pt', v: 14 },
+  { label: '小四 12pt', v: 12 },
+  { label: '五号 10.5pt', v: 10.5 },
+  { label: '小五 9pt', v: 9 },
+  { label: '六号 7.5pt', v: 7.5 },
+];
+const ALIGN_OPTS = [
+  { label: '两端对齐', v: 'justify' },
+  { label: '左对齐', v: 'left' },
+  { label: '居中', v: 'center' },
+  { label: '右对齐', v: 'right' },
+];
+const SPACING_OPTS = [
+  { label: '单倍', v: 'single' },
+  { label: '1.5倍', v: '1.5' },
+  { label: '双倍', v: 'double' },
+  { label: '固定值', v: 'exact' },
+];
+const STYLE_GROUPS = [
+  { label: '标题类', ids: ['TitleCN', 'TitleEN', 'FrontHeading', 'TocTitle', 'H1', 'H2', 'H3'] },
+  { label: '正文类', ids: ['Body', 'AbstractBody', 'KeywordsBody', 'AcknowledgementBody', 'Reference', 'ListBullet', 'ListNumber'] },
+  { label: '辅助类', ids: ['MetaLine', 'FigureCaption', 'TableTitle', 'TableText', 'PageNumber'] },
+];
+// O-design 表单控件公共样式
+const inputSt = {
+  border: '1px solid rgba(140,120,96,0.25)', borderRadius: 6,
+  padding: '3px 8px', fontSize: 12,
+  background: 'rgba(255,251,244,0.9)', color: 'var(--ink)',
+  outline: 'none', minWidth: 0, fontFamily: 'Manrope,sans-serif',
+};
+const selectSt = { ...inputSt, cursor: 'pointer', paddingRight: 4 };
 
 const PRESET_TEMPLATES = [
   {
@@ -60,6 +105,17 @@ export default function SpecGeneratorPage() {
   const [isEditing, setIsEditing] = useState(false);
   const [editedSpecJson, setEditedSpecJson] = useState('');
   const [usage, setUsage] = useState(null);
+  const [parsedSpec, setParsedSpec] = useState(null);
+  const [collapsedGroups, setCollapsedGroups] = useState({ '辅助类': true });
+
+  const updateSpec = (updater) => {
+    setParsedSpec(prev => {
+      const next = JSON.parse(JSON.stringify(prev));
+      updater(next);
+      setGeneratedSpec(JSON.stringify(next, null, 2));
+      return next;
+    });
+  };
 
   useEffect(() => {
     loadUsage();
@@ -106,10 +162,12 @@ export default function SpecGeneratorPage() {
       if (res.data.success) {
         setGeneratedSpec(res.data.spec_json);
         setEditedSpecJson(res.data.spec_json);
+        try { setParsedSpec(JSON.parse(res.data.spec_json)); } catch {}
         setSpecName(res.data.spec_name || 'AI_Generated');
         setExtractedPreview(res.data.extracted_preview || '');
         setViewMode('structure');
-        toast.success('格式规范解析成功');
+        const extra = res.data.comments_count > 0 ? `（含 ${res.data.comments_count} 条批注）` : '';
+        toast.success(`格式规范解析成功${extra}`);
         loadUsage();
       }
     } catch (err) {
@@ -128,6 +186,7 @@ export default function SpecGeneratorPage() {
       if (res.data.success) {
         setGeneratedSpec(res.data.spec_json);
         setEditedSpecJson(res.data.spec_json);
+        try { setParsedSpec(JSON.parse(res.data.spec_json)); } catch {}
         if (!specName) setSpecName(res.data.spec_name || 'AI_Generated');
         setViewMode('structure');
         toast.success('规范生成成功');
@@ -159,6 +218,7 @@ export default function SpecGeneratorPage() {
   const handleLoadSpec = (spec) => {
     setGeneratedSpec(spec.spec_json);
     setEditedSpecJson(spec.spec_json);
+    try { setParsedSpec(JSON.parse(spec.spec_json)); } catch {}
     setSpecName(spec.name);
     setSpecDescription(spec.description || '');
     setIsEditing(false);
@@ -204,6 +264,7 @@ export default function SpecGeneratorPage() {
       try {
         JSON.parse(editedSpecJson);
         setGeneratedSpec(editedSpecJson);
+        try { setParsedSpec(JSON.parse(editedSpecJson)); } catch {}
         setIsEditing(false);
         toast.success('规范已更新');
       } catch {
@@ -215,101 +276,229 @@ export default function SpecGeneratorPage() {
   };
 
   const renderStructuredView = () => {
-    if (!generatedSpec) return null;
-    try {
-      const spec = JSON.parse(generatedSpec);
-      return (
-        <div style={{ display:'flex', flexDirection:'column', gap:'0.875rem' }}>
+    const spec = parsedSpec;
+    if (!spec) return null;
 
-          {/* 基本信息 */}
-          <div style={{ background:'rgba(140,120,96,0.06)', borderRadius:8, padding:'0.875rem 1rem' }}>
-            <p style={{ margin:'0 0 0.5rem', fontSize:'0.8rem', fontWeight:700, color:'var(--ink-soft)', textTransform:'uppercase', letterSpacing:'0.05em' }}>基本信息</p>
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0.375rem', fontSize:'0.875rem' }}>
-              <span><span style={{ color:'var(--ink-soft)' }}>名称：</span>{spec.meta?.name || '-'}</span>
-              <span><span style={{ color:'var(--ink-soft)' }}>语言：</span>{spec.meta?.lang || 'zh'}</span>
-            </div>
+    const sectionHd = (label, color) => (
+      <p style={{ margin:'0 0 0.625rem', fontSize:'0.75rem', fontWeight:700, color: color || 'var(--ink-soft)', textTransform:'uppercase', letterSpacing:'0.06em' }}>{label}</p>
+    );
+    const card = (children, extra) => (
+      <div style={{ background:'rgba(140,120,96,0.06)', borderRadius:8, padding:'0.875rem 1rem', ...extra }}>{children}</div>
+    );
+
+    return (
+      <div style={{ display:'flex', flexDirection:'column', gap:'0.75rem' }}>
+
+        {/* 基本信息 */}
+        {card(<>
+          {sectionHd('基本信息')}
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0.375rem', fontSize:'0.8rem' }}>
+            <span><span style={{ color:'var(--ink-soft)' }}>名称：</span>{spec.meta?.name || '-'}</span>
+            <span><span style={{ color:'var(--ink-soft)' }}>语言：</span>{spec.meta?.lang || 'zh'}</span>
           </div>
+        </>)}
 
-          {/* 页面布局 */}
-          {spec.page && (
-            <div style={{ background:'rgba(140,120,96,0.06)', borderRadius:8, padding:'0.875rem 1rem' }}>
-              <p style={{ margin:'0 0 0.5rem', fontSize:'0.8rem', fontWeight:700, color:'var(--ink-soft)', textTransform:'uppercase', letterSpacing:'0.05em' }}>页面布局</p>
-              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0.375rem', fontSize:'0.875rem' }}>
-                <span><span style={{ color:'var(--ink-soft)' }}>上边距：</span>{spec.page.margins_mm?.top ?? '-'} mm</span>
-                <span><span style={{ color:'var(--ink-soft)' }}>下边距：</span>{spec.page.margins_mm?.bottom ?? '-'} mm</span>
-                <span><span style={{ color:'var(--ink-soft)' }}>左边距：</span>{spec.page.margins_mm?.left ?? '-'} mm</span>
-                <span><span style={{ color:'var(--ink-soft)' }}>右边距：</span>{spec.page.margins_mm?.right ?? '-'} mm</span>
-                <span><span style={{ color:'var(--ink-soft)' }}>页眉距：</span>{spec.page.header_mm ?? '-'} mm</span>
-                <span><span style={{ color:'var(--ink-soft)' }}>页脚距：</span>{spec.page.footer_mm ?? '-'} mm</span>
-              </div>
+        {/* 页面布局（可编辑） */}
+        {spec.page && card(<>
+          {sectionHd('页面布局')}
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0.5rem 1rem' }}>
+            {[
+              { label:'上边距', key:'top' }, { label:'下边距', key:'bottom' },
+              { label:'左边距', key:'left' }, { label:'右边距', key:'right' },
+            ].map(({ label, key }) => (
+              <label key={key} style={{ display:'flex', alignItems:'center', gap:5, fontSize:'0.8rem' }}>
+                <span style={{ color:'var(--ink-soft)', width:44, flexShrink:0 }}>{label}</span>
+                <input type="number" step="0.1" style={{ ...inputSt, width:58 }}
+                  value={spec.page.margins_mm?.[key] ?? ''}
+                  onChange={e => updateSpec(s => { if (!s.page.margins_mm) s.page.margins_mm = {}; s.page.margins_mm[key] = +e.target.value; })}
+                />
+                <span style={{ color:'var(--ink-soft)' }}>mm</span>
+              </label>
+            ))}
+            <label style={{ display:'flex', alignItems:'center', gap:5, fontSize:'0.8rem' }}>
+              <span style={{ color:'var(--ink-soft)', width:44, flexShrink:0 }}>页眉距</span>
+              <input type="number" step="0.5" style={{ ...inputSt, width:58 }}
+                value={spec.page.header_mm ?? ''}
+                onChange={e => updateSpec(s => { s.page.header_mm = +e.target.value; })}
+              />
+              <span style={{ color:'var(--ink-soft)' }}>mm</span>
+            </label>
+            <label style={{ display:'flex', alignItems:'center', gap:5, fontSize:'0.8rem' }}>
+              <span style={{ color:'var(--ink-soft)', width:44, flexShrink:0 }}>页脚距</span>
+              <input type="number" step="0.5" style={{ ...inputSt, width:58 }}
+                value={spec.page.footer_mm ?? ''}
+                onChange={e => updateSpec(s => { s.page.footer_mm = +e.target.value; })}
+              />
+              <span style={{ color:'var(--ink-soft)' }}>mm</span>
+            </label>
+          </div>
+        </>)}
+
+        {/* 页眉设置（可编辑） */}
+        {card(<>
+          <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom: spec?.header?.enabled ? '0.625rem' : 0 }}>
+            {sectionHd('页眉设置', '#3d5a4e')}
+            <label style={{ display:'flex', alignItems:'center', gap:4, fontSize:12, cursor:'pointer', marginLeft:'auto', marginBottom:'0.625rem' }}>
+              <input type="checkbox" checked={!!spec?.header?.enabled}
+                onChange={e => updateSpec(s => { if (!s.header) s.header = {}; s.header.enabled = e.target.checked; })}
+              />
+              启用
+            </label>
+          </div>
+          {spec?.header?.enabled && (
+            <div style={{ display:'flex', flexWrap:'wrap', gap:'0.5rem', alignItems:'center' }}>
+              <label style={{ display:'flex', alignItems:'center', gap:4, fontSize:'0.8rem' }}>
+                <span style={{ color:'var(--ink-soft)' }}>内容</span>
+                <select style={selectSt}
+                  value={spec.header?.content_type || 'blank'}
+                  onChange={e => updateSpec(s => { if (!s.header) s.header = {}; s.header.content_type = e.target.value; })}
+                >
+                  <option value="blank">空白</option>
+                  <option value="school_name">学校名称</option>
+                  <option value="thesis_title">论文题目</option>
+                  <option value="chapter_title">章节标题</option>
+                  <option value="custom">自定义</option>
+                </select>
+              </label>
+              {spec.header?.content_type === 'custom' && (
+                <input style={{ ...inputSt, flex:1, minWidth:100 }}
+                  placeholder="自定义文字"
+                  value={spec.header?.custom_text || ''}
+                  onChange={e => updateSpec(s => { s.header.custom_text = e.target.value; })}
+                />
+              )}
+              <label style={{ display:'flex', alignItems:'center', gap:4, fontSize:'0.8rem', cursor:'pointer' }}>
+                <input type="checkbox" checked={!!spec?.header?.separator_line}
+                  onChange={e => updateSpec(s => { s.header.separator_line = e.target.checked; })}
+                />
+                分隔线
+              </label>
             </div>
           )}
+        </>, { background:'rgba(61,90,78,0.06)', border:'1px solid rgba(61,90,78,0.12)' })}
 
-          {/* 页眉设置 */}
-          {spec.header && (
-            <div style={{ background:'rgba(61,90,78,0.06)', borderRadius:8, padding:'0.875rem 1rem', border:'1px solid rgba(61,90,78,0.12)' }}>
-              <p style={{ margin:'0 0 0.5rem', fontSize:'0.8rem', fontWeight:700, color:'#3d5a4e', textTransform:'uppercase', letterSpacing:'0.05em' }}>页眉设置</p>
-              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0.375rem', fontSize:'0.875rem' }}>
-                <span><span style={{ color:'var(--ink-soft)' }}>启用：</span>{spec.header.enabled ? '是' : '否'}</span>
-                <span><span style={{ color:'var(--ink-soft)' }}>内容：</span>{HEADER_CONTENT_LABELS[spec.header.content_type] || spec.header.content_type}</span>
-                {spec.header.custom_text && <span style={{ gridColumn:'1/-1' }}><span style={{ color:'var(--ink-soft)' }}>自定义文字：</span>{spec.header.custom_text}</span>}
-                <span><span style={{ color:'var(--ink-soft)' }}>字体：</span>{spec.header.font_name}</span>
-                <span><span style={{ color:'var(--ink-soft)' }}>字号：</span>{spec.header.font_size_pt} pt</span>
-                <span><span style={{ color:'var(--ink-soft)' }}>对齐：</span>{{left:'左对齐',center:'居中',right:'右对齐'}[spec.header.alignment] || spec.header.alignment}</span>
-                <span><span style={{ color:'var(--ink-soft)' }}>分隔线：</span>{spec.header.separator_line ? '显示' : '隐藏'}</span>
-              </div>
-            </div>
-          )}
+        {/* 段落样式（分组折叠，可编辑） */}
+        {spec.styles && card(<>
+          {sectionHd('段落样式')}
+          <div style={{ display:'flex', flexDirection:'column', gap:2 }}>
+            {STYLE_GROUPS.map(group => {
+              const validIds = group.ids.filter(id => spec.styles?.[id]);
+              if (!validIds.length) return null;
+              const collapsed = !!collapsedGroups[group.label];
+              return (
+                <div key={group.label} style={{ marginBottom:2 }}>
+                  <button
+                    onClick={() => setCollapsedGroups(p => ({ ...p, [group.label]: !p[group.label] }))}
+                    style={{ width:'100%', display:'flex', alignItems:'center', gap:5, background:'none', border:'none', cursor:'pointer', padding:'5px 0 4px', textAlign:'left' }}
+                  >
+                    <ChevronRight size={12} style={{ color:'var(--ink-soft)', transform: collapsed ? '' : 'rotate(90deg)', transition:'transform .18s', flexShrink:0 }} />
+                    <span style={{ fontSize:11, fontWeight:700, color:'var(--ink-soft)', textTransform:'uppercase', letterSpacing:'0.07em' }}>{group.label}</span>
+                    <span style={{ fontSize:11, color:'var(--ink-soft)', opacity:0.45 }}>({validIds.length})</span>
+                  </button>
+                  {!collapsed && (
+                    <div>
+                      {validIds.map(id => {
+                        const st = spec.styles[id];
+                        return (
+                          <div key={id} style={{ display:'flex', gap:5, alignItems:'center', flexWrap:'wrap', padding:'4px 0 4px 18px', borderBottom:'1px solid rgba(140,120,96,0.07)' }}>
+                            <span style={{ width:70, fontSize:11, fontWeight:600, color:'var(--accent)', flexShrink:0 }}>{st.name || id}</span>
+                            <select style={{ ...selectSt, fontSize:11, padding:'2px 4px' }}
+                              value={st.run?.font?.eastAsia || ''}
+                              onChange={e => updateSpec(s => { if (s.styles[id].run?.font) s.styles[id].run.font.eastAsia = e.target.value; })}
+                            >
+                              <option value="">中文字体</option>
+                              {CN_FONTS.map(f => <option key={f.v} value={f.v}>{f.label}</option>)}
+                            </select>
+                            <select style={{ ...selectSt, fontSize:11, padding:'2px 4px' }}
+                              value={st.run?.size_pt ?? 12}
+                              onChange={e => updateSpec(s => { s.styles[id].run.size_pt = +e.target.value; })}
+                            >
+                              {CN_SIZES.map(f => <option key={f.v} value={f.v}>{f.label}</option>)}
+                            </select>
+                            <select style={{ ...selectSt, fontSize:11, padding:'2px 4px' }}
+                              value={st.paragraph?.alignment || 'justify'}
+                              onChange={e => updateSpec(s => { if (s.styles[id].paragraph) s.styles[id].paragraph.alignment = e.target.value; })}
+                            >
+                              {ALIGN_OPTS.map(o => <option key={o.v} value={o.v}>{o.label}</option>)}
+                            </select>
+                            <select style={{ ...selectSt, fontSize:11, padding:'2px 4px' }}
+                              value={st.paragraph?.line_spacing_rule || 'single'}
+                              onChange={e => updateSpec(s => { if (s.styles[id].paragraph) s.styles[id].paragraph.line_spacing_rule = e.target.value; })}
+                            >
+                              {SPACING_OPTS.map(o => <option key={o.v} value={o.v}>{o.label}</option>)}
+                            </select>
+                            <label style={{ display:'flex', alignItems:'center', gap:3, fontSize:11, cursor:'pointer', flexShrink:0 }}>
+                              <input type="checkbox" checked={!!st.run?.bold}
+                                onChange={e => updateSpec(s => { if (s.styles[id].run) s.styles[id].run.bold = e.target.checked; })}
+                              />
+                              粗体
+                            </label>
+                            <label style={{ display:'flex', alignItems:'center', gap:3, fontSize:11, flexShrink:0 }}>
+                              缩进
+                              <input type="number" step="0.5" style={{ ...inputSt, width:38, fontSize:11, padding:'2px 4px', textAlign:'center' }}
+                                value={st.paragraph?.first_line_indent_chars ?? 0}
+                                onChange={e => updateSpec(s => { if (s.styles[id].paragraph) s.styles[id].paragraph.first_line_indent_chars = +e.target.value; })}
+                              />
+                              字符
+                            </label>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </>)}
 
-          {/* 段落样式 */}
-          {spec.styles && (
-            <div style={{ background:'rgba(140,120,96,0.06)', borderRadius:8, padding:'0.875rem 1rem' }}>
-              <p style={{ margin:'0 0 0.625rem', fontSize:'0.8rem', fontWeight:700, color:'var(--ink-soft)', textTransform:'uppercase', letterSpacing:'0.05em' }}>段落样式</p>
-              <div style={{ display:'flex', flexDirection:'column', gap:'0.5rem' }}>
-                {Object.entries(spec.styles).map(([key, style]) => (
-                  <div key={key} style={{ paddingBottom:'0.5rem', borderBottom:'1px solid rgba(140,120,96,0.1)' }}>
-                    <span style={{ fontSize:'0.8rem', fontWeight:700, color:'var(--accent)', marginRight:'0.5rem' }}>{style.name || key}</span>
-                    <span style={{ fontSize:'0.8rem', color:'var(--ink-soft)' }}>
-                      {style.run?.font?.eastAsia || '-'} · {style.run?.size_pt || '-'}pt · {style.paragraph?.alignment || '-'} · 行距{style.paragraph?.line_spacing_rule || '-'}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+        {/* 交叉引用（可编辑） */}
+        {spec.cross_ref && card(<>
+          {sectionHd('图表交叉引用', '#5a6a8e')}
+          <div style={{ display:'flex', flexWrap:'wrap', gap:'0.5rem', alignItems:'center', fontSize:'0.8rem' }}>
+            <label style={{ display:'flex', alignItems:'center', gap:4 }}>
+              <span style={{ color:'var(--ink-soft)' }}>编号格式</span>
+              <select style={selectSt}
+                value={spec.cross_ref.numbering_style || 'chapter-seq'}
+                onChange={e => updateSpec(s => { s.cross_ref.numbering_style = e.target.value; })}
+              >
+                <option value="chapter-seq">含章号（图1-1）</option>
+                <option value="global-seq">全文连续（图1）</option>
+              </select>
+            </label>
+            <label style={{ display:'flex', alignItems:'center', gap:4 }}>
+              <span style={{ color:'var(--ink-soft)' }}>图注位置</span>
+              <select style={selectSt}
+                value={spec.cross_ref.caption_position_figure || 'below'}
+                onChange={e => updateSpec(s => { s.cross_ref.caption_position_figure = e.target.value; })}
+              >
+                <option value="below">图下方</option>
+                <option value="above">图上方</option>
+              </select>
+            </label>
+            <label style={{ display:'flex', alignItems:'center', gap:4 }}>
+              <span style={{ color:'var(--ink-soft)' }}>表注位置</span>
+              <select style={selectSt}
+                value={spec.cross_ref.caption_position_table || 'above'}
+                onChange={e => updateSpec(s => { s.cross_ref.caption_position_table = e.target.value; })}
+              >
+                <option value="above">表上方</option>
+                <option value="below">表下方</option>
+              </select>
+            </label>
+          </div>
+        </>, { background:'rgba(90,106,142,0.06)', border:'1px solid rgba(90,106,142,0.12)' })}
 
-          {/* 交叉引用 */}
-          {spec.cross_ref && (
-            <div style={{ background:'rgba(90,106,142,0.06)', borderRadius:8, padding:'0.875rem 1rem', border:'1px solid rgba(90,106,142,0.12)' }}>
-              <p style={{ margin:'0 0 0.5rem', fontSize:'0.8rem', fontWeight:700, color:'#5a6a8e', textTransform:'uppercase', letterSpacing:'0.05em' }}>图表交叉引用</p>
-              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0.375rem', fontSize:'0.875rem' }}>
-                <span><span style={{ color:'var(--ink-soft)' }}>图前缀：</span>{spec.cross_ref.figure_prefix}</span>
-                <span><span style={{ color:'var(--ink-soft)' }}>表前缀：</span>{spec.cross_ref.table_prefix}</span>
-                <span><span style={{ color:'var(--ink-soft)' }}>编号格式：</span>{{  'chapter-seq':'含章号（图1-1）','global-seq':'全文连续（图1）'}[spec.cross_ref.numbering_style] || spec.cross_ref.numbering_style}</span>
-                <span><span style={{ color:'var(--ink-soft)' }}>分隔符：</span>「{spec.cross_ref.separator}」</span>
-                <span><span style={{ color:'var(--ink-soft)' }}>图注位置：</span>{{below:'图下方',above:'图上方'}[spec.cross_ref.caption_position_figure]}</span>
-                <span><span style={{ color:'var(--ink-soft)' }}>表注位置：</span>{{above:'表上方',below:'表下方'}[spec.cross_ref.caption_position_table]}</span>
-                <span><span style={{ color:'var(--ink-soft)' }}>图注字号：</span>{spec.cross_ref.caption_font_size_pt} pt</span>
-                <span><span style={{ color:'var(--ink-soft)' }}>图注对齐：</span>{{left:'左对齐',center:'居中',right:'右对齐'}[spec.cross_ref.caption_alignment]}</span>
-              </div>
-            </div>
-          )}
-
-          {/* 页码 */}
-          {spec.page_numbering && (
-            <div style={{ background:'rgba(140,120,96,0.06)', borderRadius:8, padding:'0.875rem 1rem' }}>
-              <p style={{ margin:'0 0 0.5rem', fontSize:'0.8rem', fontWeight:700, color:'var(--ink-soft)', textTransform:'uppercase', letterSpacing:'0.05em' }}>页码设置</p>
-              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0.375rem', fontSize:'0.875rem' }}>
-                <span><span style={{ color:'var(--ink-soft)' }}>前言格式：</span>{{romanUpper:'罗马大写',romanLower:'罗马小写',decimal:'阿拉伯数字'}[spec.page_numbering.front_format]}</span>
-                <span><span style={{ color:'var(--ink-soft)' }}>正文格式：</span>{{romanUpper:'罗马大写',romanLower:'罗马小写',decimal:'阿拉伯数字'}[spec.page_numbering.main_format]}</span>
-              </div>
-            </div>
-          )}
-        </div>
-      );
-    } catch {
-      return <p style={{ color:'#8b3a2a', fontSize:'0.875rem' }}>JSON 解析失败</p>;
-    }
+        {/* 页码 */}
+        {spec.page_numbering && card(<>
+          {sectionHd('页码设置')}
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0.375rem', fontSize:'0.8rem' }}>
+            <span><span style={{ color:'var(--ink-soft)' }}>前言格式：</span>{{romanUpper:'罗马大写',romanLower:'罗马小写',decimal:'阿拉伯数字'}[spec.page_numbering.front_format]}</span>
+            <span><span style={{ color:'var(--ink-soft)' }}>正文格式：</span>{{romanUpper:'罗马大写',romanLower:'罗马小写',decimal:'阿拉伯数字'}[spec.page_numbering.main_format]}</span>
+          </div>
+        </>)}
+      </div>
+    );
   };
 
   const renderTableView = () => {

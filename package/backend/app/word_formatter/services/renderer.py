@@ -11,7 +11,8 @@ from typing import Optional, Set
 
 from docx import Document
 from docx.enum.section import WD_SECTION
-from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.style import WD_STYLE_TYPE
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Mm, Pt
@@ -39,6 +40,94 @@ def _align_to_docx(align: str):
         "right": WD_ALIGN_PARAGRAPH.RIGHT,
         "justify": WD_ALIGN_PARAGRAPH.JUSTIFY,
     }[align]
+
+
+def _apply_spec_styles(doc: Document, spec) -> None:
+    """将 StyleSpec.styles 中的格式定义写入 Word 样式表。
+
+    必须在写入任何内容前调用，否则已存在的段落不会继承更新后的样式。
+    """
+    _LS_MAP = {
+        'single': WD_LINE_SPACING.SINGLE,
+        '1.5':    WD_LINE_SPACING.ONE_POINT_FIVE,
+        'double': WD_LINE_SPACING.DOUBLE,
+    }
+
+    for style_id, style_def in spec.styles.items():
+        try:
+            if style_id in doc.styles:
+                word_style = doc.styles[style_id]
+            else:
+                word_style = doc.styles.add_style(style_id, WD_STYLE_TYPE.PARAGRAPH)
+        except Exception:
+            continue
+
+        run_spec  = style_def.run
+        para_spec = style_def.paragraph
+
+        # --- 字体（英文/通用部分） ---
+        try:
+            font = word_style.font
+            if run_spec.font.ascii or run_spec.font.hAnsi:
+                font.name = run_spec.font.ascii or run_spec.font.hAnsi
+            font.size   = Pt(run_spec.size_pt)
+            font.bold   = run_spec.bold
+            font.italic = run_spec.italic
+        except Exception:
+            pass
+
+        # --- 中文字体（eastAsia / ascii / hAnsi via OOXML） ---
+        try:
+            rPr    = word_style.element.get_or_add_rPr()
+            rFonts = rPr.get_or_add_rFonts()
+            if run_spec.font.eastAsia:
+                rFonts.set(qn('w:eastAsia'), run_spec.font.eastAsia)
+                rFonts.set(qn('w:eastAsiaTheme'), '')
+            if run_spec.font.ascii:
+                rFonts.set(qn('w:ascii'), run_spec.font.ascii)
+                rFonts.set(qn('w:asciiTheme'), '')
+            if run_spec.font.hAnsi:
+                rFonts.set(qn('w:hAnsi'), run_spec.font.hAnsi)
+                rFonts.set(qn('w:hAnsiTheme'), '')
+        except Exception:
+            pass
+
+        # --- 段落格式 ---
+        try:
+            pf = word_style.paragraph_format
+            pf.alignment = _align_to_docx(para_spec.alignment)
+
+            # 段前/段后间距
+            if para_spec.space_before_pt:
+                pf.space_before = Pt(para_spec.space_before_pt)
+            elif para_spec.space_before_lines is not None:
+                pf.space_before = Pt(para_spec.space_before_lines * run_spec.size_pt)
+
+            if para_spec.space_after_pt:
+                pf.space_after = Pt(para_spec.space_after_pt)
+            elif para_spec.space_after_lines is not None:
+                pf.space_after = Pt(para_spec.space_after_lines * run_spec.size_pt)
+
+            # 行距
+            rule = para_spec.line_spacing_rule
+            if rule in _LS_MAP:
+                pf.line_spacing_rule = _LS_MAP[rule]
+            elif rule == 'exact' and para_spec.line_spacing:
+                pf.line_spacing_rule = WD_LINE_SPACING.EXACTLY
+                pf.line_spacing      = Pt(para_spec.line_spacing)
+
+            # 首行缩进：字符数 × 字号pt
+            if para_spec.first_line_indent_chars:
+                pf.first_line_indent = Pt(para_spec.first_line_indent_chars * run_spec.size_pt)
+            else:
+                pf.first_line_indent = Pt(0)
+
+            # 段落分页控制
+            pf.keep_with_next  = para_spec.keep_with_next
+            pf.keep_together   = para_spec.keep_lines
+            pf.page_break_before = para_spec.page_break_before
+        except Exception:
+            pass
 
 
 def _clear_paragraph_runs(p) -> None:
@@ -236,6 +325,7 @@ def render_docx(
 ) -> bytes:
     options = options or RenderOptions()
     doc = Document(io.BytesIO(reference_docx_bytes))
+    _apply_spec_styles(doc, spec)
 
     section = doc.sections[0]
     section.top_margin = Mm(spec.page.margins_mm.top)
