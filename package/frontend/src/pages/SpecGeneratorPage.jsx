@@ -427,6 +427,16 @@ export default function SpecGeneratorPage() {
                             >
                               {SPACING_OPTS.map(o => <option key={o.v} value={o.v}>{o.label}</option>)}
                             </select>
+                            {st.paragraph?.line_spacing_rule === 'exact' && (
+                              <label style={{ display:'flex', alignItems:'center', gap:3, fontSize:11, flexShrink:0 }}>
+                                <input type="number" step="0.5" min="1" style={{ ...inputSt, width:44, fontSize:11, padding:'2px 4px', textAlign:'center' }}
+                                  value={st.paragraph?.line_spacing ?? ''}
+                                  placeholder="pt"
+                                  onChange={e => updateSpec(s => { if (s.styles[id].paragraph) s.styles[id].paragraph.line_spacing = +e.target.value; })}
+                                />
+                                pt
+                              </label>
+                            )}
                             <label style={{ display:'flex', alignItems:'center', gap:3, fontSize:11, cursor:'pointer', flexShrink:0 }}>
                               <input type="checkbox" checked={!!st.run?.bold}
                                 onChange={e => updateSpec(s => { if (s.styles[id].run) s.styles[id].run.bold = e.target.checked; })}
