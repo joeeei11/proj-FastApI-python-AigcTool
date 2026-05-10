@@ -52,6 +52,12 @@ frontend.log
 backend/backend.log
 frontend/frontend.log
 
+# Local agent/project metadata
+.serena/
+
+# Runtime uploads
+package/uploads/
+
 # PyInstaller
 *.spec.bak
 package/static/

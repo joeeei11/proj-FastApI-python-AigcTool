@@ -113,6 +113,33 @@ def _add_performance_indexes():
         # 失败不应该阻止应用启动
 
 
+def seed_forum_categories():
+    """Create default forum categories if they do not exist."""
+    from app.models.models import ForumCategory
+
+    defaults = [
+        ("使用交流", "分享 OriginFlow 使用经验和技巧", 10),
+        ("论文写作", "讨论论文结构、表达和写作方法", 20),
+        ("格式问题", "交流 Word 排版、规范和格式检查问题", 30),
+        ("AIGC 降重", "讨论 AIGC 痕迹、润色和原创性增强", 40),
+        ("意见反馈", "提交产品建议、问题反馈和需求讨论", 50),
+    ]
+
+    db = SessionLocal()
+    try:
+        for name, description, sort_order in defaults:
+            existing = db.query(ForumCategory).filter(ForumCategory.name == name).first()
+            if existing:
+                continue
+            db.add(ForumCategory(name=name, description=description, sort_order=sort_order, is_active=True))
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+
 def _migrate_database_schema():
     """迁移数据库结构 - 添加新列到已存在的表"""
     try:
@@ -211,6 +238,20 @@ def _migrate_database_schema():
                             print("  ✓ 添加字段: coupons.expires_at")
 
                 # 迁移 custom_prompts 表
+                if "announcements" in tables:
+                    announcement_columns = {column["name"] for column in inspector.get_columns("announcements")}
+
+                    if "show_on_login" not in announcement_columns:
+                        if _add_column_safely(conn, "announcements", "show_on_login", "BOOLEAN DEFAULT 0"):
+                            print("  Added column: announcements.show_on_login")
+
+                if "forum_posts" in tables:
+                    forum_post_columns = {column["name"] for column in inspector.get_columns("forum_posts")}
+
+                    if "image_urls" not in forum_post_columns:
+                        if _add_column_safely(conn, "forum_posts", "image_urls", "TEXT"):
+                            print("  Added column: forum_posts.image_urls")
+
                 if "custom_prompts" in tables:
                     prompt_columns = {column["name"] for column in inspector.get_columns("custom_prompts")}
                     

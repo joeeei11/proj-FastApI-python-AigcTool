@@ -4,7 +4,7 @@ import toast from 'react-hot-toast';
 import {
   User, Lock, History, ShoppingBag, ChevronRight,
   CheckCircle, Ticket, LogOut, FileText, AlignLeft,
-  Sparkles, ClipboardList, Search, ImageIcon,
+  Sparkles, ClipboardList, Search, ImageIcon, MessageSquare,
 } from 'lucide-react';
 import { authAPI, optimizationAPI } from '../api';
 import { useAuth } from '../auth/AuthContext';
@@ -29,6 +29,17 @@ const STATUS_CFG = {
 };
 
 const TOOLS = [
+  {
+    label: '交流论坛',
+    desc:  '讨论问题与经验反馈',
+    icon:  <MessageSquare size={20} />,
+    path:  '/forum',
+    color: '#3d5a4e',
+    bg:    'linear-gradient(135deg,rgba(61,90,78,0.08),rgba(195,160,106,0.06))',
+    border:'rgba(61,90,78,0.15)',
+    beta:  false,
+    free:  true,
+  },
   {
     label: '论文优化',
     desc:  '润色 + 原创增强',
@@ -224,6 +235,7 @@ export default function ProfilePage() {
                 key={t.path}
                 onClick={() => {
                   if (t.beta) return;
+                  if (t.free) { navigate(t.path); return; }
                   if (t.imageOnly) {
                     if (imageCreds <= 0) {
                       toast.error('图片点数不足，请先兑换图片卡券');

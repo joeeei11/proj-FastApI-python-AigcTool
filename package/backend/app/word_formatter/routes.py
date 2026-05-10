@@ -12,7 +12,7 @@ from datetime import datetime
 from typing import List, Optional
 from urllib.parse import quote
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Header, HTTPException, Query, Request, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Header, HTTPException, Query, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -499,6 +499,7 @@ async def format_file(
     include_cover: bool = Query(True),
     include_toc: bool = Query(True),
     toc_title: str = Query("目 录"),
+    custom_spec_json: Optional[str] = Form(None),
     background_tasks: BackgroundTasks = None,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -565,10 +566,19 @@ async def format_file(
     except ValueError:
         fmt = detected_format
 
+    # Parse custom spec if provided
+    custom_spec = None
+    if custom_spec_json:
+        try:
+            custom_spec = validate_custom_spec(custom_spec_json)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"自定义规范格式错误: {e}")
+
     # Create compile options
     options = CompileOptions(
         input_format=fmt,
         spec_name=spec_name,
+        custom_spec=custom_spec,
         include_cover=include_cover,
         include_toc=include_toc,
         toc_title=toc_title,

@@ -13,6 +13,9 @@ import ArticlePreprocessorPage from './pages/ArticlePreprocessorPage';
 import FormatCheckerPage from './pages/FormatCheckerPage';
 import ProfilePage from './pages/ProfilePage';
 import ImageGeneratorPage from './pages/ImageGeneratorPage';
+import ForumPage from './pages/ForumPage';
+import ForumPostPage from './pages/ForumPostPage';
+import LoginAnnouncementModal from './components/LoginAnnouncementModal';
 import './index.css';
 
 // 需要登录才能访问；未登录跳回首页（刷新 = 内存清空 = 回首页）
@@ -23,23 +26,29 @@ const ProtectedRoute = ({ children }) => {
 };
 
 function AppRoutes() {
+  const { token, userInfo } = useAuth();
   return (
-    <Routes>
-      <Route path="/" element={<WelcomePage />} />
-      <Route path="/admin" element={<AdminDashboard />} />
+    <>
+      <LoginAnnouncementModal enabled={!!token} userId={userInfo?.id} />
+      <Routes>
+        <Route path="/" element={<WelcomePage />} />
+        <Route path="/admin" element={<AdminDashboard />} />
 
-      <Route path="/redeem" element={<ProtectedRoute><RedeemPage /></ProtectedRoute>} />
-      <Route path="/workspace" element={<ProtectedRoute><WorkspacePage /></ProtectedRoute>} />
-      <Route path="/session/:sessionId" element={<ProtectedRoute><SessionDetailPage /></ProtectedRoute>} />
-      <Route path="/word-formatter" element={<ProtectedRoute><WordFormatterPage /></ProtectedRoute>} />
-      <Route path="/spec-generator" element={<ProtectedRoute><SpecGeneratorPage /></ProtectedRoute>} />
-      <Route path="/article-preprocessor" element={<ProtectedRoute><ArticlePreprocessorPage /></ProtectedRoute>} />
-      <Route path="/format-checker" element={<ProtectedRoute><FormatCheckerPage /></ProtectedRoute>} />
-      <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
-      <Route path="/image-generator" element={<ProtectedRoute><ImageGeneratorPage /></ProtectedRoute>} />
+        <Route path="/redeem" element={<ProtectedRoute><RedeemPage /></ProtectedRoute>} />
+        <Route path="/workspace" element={<ProtectedRoute><WorkspacePage /></ProtectedRoute>} />
+        <Route path="/session/:sessionId" element={<ProtectedRoute><SessionDetailPage /></ProtectedRoute>} />
+        <Route path="/word-formatter" element={<ProtectedRoute><WordFormatterPage /></ProtectedRoute>} />
+        <Route path="/spec-generator" element={<ProtectedRoute><SpecGeneratorPage /></ProtectedRoute>} />
+        <Route path="/article-preprocessor" element={<ProtectedRoute><ArticlePreprocessorPage /></ProtectedRoute>} />
+        <Route path="/format-checker" element={<ProtectedRoute><FormatCheckerPage /></ProtectedRoute>} />
+        <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
+        <Route path="/image-generator" element={<ProtectedRoute><ImageGeneratorPage /></ProtectedRoute>} />
+        <Route path="/forum" element={<ProtectedRoute><ForumPage /></ProtectedRoute>} />
+        <Route path="/forum/posts/:postId" element={<ProtectedRoute><ForumPostPage /></ProtectedRoute>} />
 
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </>
   );
 }
 

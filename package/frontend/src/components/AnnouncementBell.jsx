@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Bell, X, Info, AlertTriangle, Sparkles } from 'lucide-react';
-import axios from 'axios';
+import { announcementAPI } from '../api';
 
 const STORAGE_KEY = 'dismissed_announcements';
 
@@ -20,7 +20,7 @@ export default function AnnouncementBell() {
   const ref = useRef(null);
 
   useEffect(() => {
-    axios.get('/api/announcements').then(r => setAnnouncements(r.data)).catch(() => {});
+    announcementAPI.listActive().then(r => setAnnouncements(r.data)).catch(() => {});
   }, []);
 
   // 点击外部关闭

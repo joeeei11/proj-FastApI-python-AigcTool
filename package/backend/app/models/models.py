@@ -205,6 +205,7 @@ class Announcement(Base):
     content = Column(Text, nullable=False)
     type = Column(String(20), default='info')   # info / warning / event
     is_active = Column(Boolean, default=True)
+    show_on_login = Column(Boolean, default=False)
     expires_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -234,3 +235,79 @@ class SavedSpec(Base):
 
     # 关系
     user = relationship("User", back_populates="saved_specs")
+
+
+class ForumCategory(Base):
+    """Forum category."""
+    __tablename__ = "forum_categories"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(50), unique=True, nullable=False)
+    description = Column(String(255), nullable=True)
+    sort_order = Column(Integer, default=0)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    posts = relationship("ForumPost", back_populates="category")
+
+
+class ForumPost(Base):
+    """Forum post."""
+    __tablename__ = "forum_posts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    category_id = Column(Integer, ForeignKey("forum_categories.id"), nullable=False, index=True)
+    post_type = Column(String(20), default="discussion", index=True)
+    title = Column(String(100), nullable=False)
+    content = Column(Text, nullable=False)
+    image_urls = Column(Text, nullable=True)
+    reply_count = Column(Integer, default=0)
+    view_count = Column(Integer, default=0)
+    is_pinned = Column(Boolean, default=False)
+    is_featured = Column(Boolean, default=False)
+    is_locked = Column(Boolean, default=False)
+    is_solved = Column(Boolean, default=False)
+    is_deleted = Column(Boolean, default=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    last_replied_at = Column(DateTime, nullable=True, index=True)
+
+    author = relationship("User")
+    category = relationship("ForumCategory", back_populates="posts")
+    replies = relationship("ForumReply", back_populates="post", cascade="all, delete-orphan")
+
+
+class ForumReply(Base):
+    """Forum reply."""
+    __tablename__ = "forum_replies"
+
+    id = Column(Integer, primary_key=True, index=True)
+    post_id = Column(Integer, ForeignKey("forum_posts.id"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    content = Column(Text, nullable=False)
+    is_deleted = Column(Boolean, default=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    post = relationship("ForumPost", back_populates="replies")
+    author = relationship("User")
+
+
+class ForumReport(Base):
+    """Forum report."""
+    __tablename__ = "forum_reports"
+
+    id = Column(Integer, primary_key=True, index=True)
+    reporter_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    target_type = Column(String(20), nullable=False, index=True)
+    target_id = Column(Integer, nullable=False, index=True)
+    reason = Column(String(50), nullable=False)
+    description = Column(Text, nullable=True)
+    status = Column(String(20), default="pending", index=True)
+    handled_by = Column(Integer, nullable=True)
+    handled_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+    reporter = relationship("User")

@@ -1,4 +1,6 @@
-from pydantic import BaseModel, Field
+import json
+
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 
@@ -76,6 +78,7 @@ class AnnouncementCreate(BaseModel):
     content: str
     type: str = Field('info', pattern='^(info|warning|event)$')
     is_active: bool = True
+    show_on_login: bool = False
     expires_at: Optional[datetime] = None
 
 
@@ -86,6 +89,7 @@ class AnnouncementResponse(BaseModel):
     content: str
     type: str
     is_active: bool
+    show_on_login: bool = False
     expires_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
@@ -288,5 +292,142 @@ class PromptResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     
+    class Config:
+        from_attributes = True
+
+
+class ForumAuthorResponse(BaseModel):
+    id: int
+    username: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class ForumCategoryCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=50)
+    description: Optional[str] = Field(None, max_length=255)
+    sort_order: int = 0
+    is_active: bool = True
+
+
+class ForumCategoryResponse(BaseModel):
+    id: int
+    name: str
+    description: Optional[str] = None
+    sort_order: int = 0
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ForumPostCreate(BaseModel):
+    title: str = Field(..., min_length=5, max_length=100)
+    content: str = Field(..., min_length=10, max_length=5000)
+    category_id: int
+    post_type: str = Field("discussion", pattern="^(discussion|question|feedback)$")
+    image_urls: List[str] = Field(default_factory=list, max_length=6)
+
+
+class ForumPostUpdate(BaseModel):
+    is_pinned: Optional[bool] = None
+    is_featured: Optional[bool] = None
+    is_locked: Optional[bool] = None
+    is_solved: Optional[bool] = None
+    is_deleted: Optional[bool] = None
+
+
+class ForumPostResponse(BaseModel):
+    id: int
+    user_id: int
+    category_id: int
+    post_type: str
+    title: str
+    content: str
+    image_urls: List[str] = []
+    reply_count: int = 0
+    view_count: int = 0
+    is_pinned: bool = False
+    is_featured: bool = False
+    is_locked: bool = False
+    is_solved: bool = False
+    is_deleted: bool = False
+    created_at: datetime
+    updated_at: datetime
+    last_replied_at: Optional[datetime] = None
+    author: Optional[ForumAuthorResponse] = None
+    category: Optional[ForumCategoryResponse] = None
+
+    @field_validator("image_urls", mode="before")
+    @classmethod
+    def parse_image_urls(cls, value):
+        if not value:
+            return []
+        if isinstance(value, list):
+            return value
+        if isinstance(value, str):
+            try:
+                parsed = json.loads(value)
+            except json.JSONDecodeError:
+                return []
+            return parsed if isinstance(parsed, list) else []
+        return []
+
+    class Config:
+        from_attributes = True
+
+
+class ForumPostListResponse(BaseModel):
+    items: List[ForumPostResponse]
+    total: int
+    page: int
+    page_size: int
+
+
+class ForumReplyCreate(BaseModel):
+    content: str = Field(..., min_length=1, max_length=2000)
+
+
+class ForumReplyResponse(BaseModel):
+    id: int
+    post_id: int
+    user_id: int
+    content: str
+    is_deleted: bool = False
+    created_at: datetime
+    updated_at: datetime
+    author: Optional[ForumAuthorResponse] = None
+
+    class Config:
+        from_attributes = True
+
+
+class ForumReportCreate(BaseModel):
+    target_type: str = Field(..., pattern="^(post|reply)$")
+    target_id: int
+    reason: str = Field(..., max_length=50)
+    description: Optional[str] = Field(None, max_length=1000)
+
+
+class ForumReportUpdate(BaseModel):
+    status: str = Field(..., pattern="^(pending|resolved|rejected)$")
+
+
+class ForumReportResponse(BaseModel):
+    id: int
+    reporter_id: int
+    target_type: str
+    target_id: int
+    reason: str
+    description: Optional[str] = None
+    status: str
+    handled_by: Optional[int] = None
+    handled_at: Optional[datetime] = None
+    created_at: datetime
+    reporter: Optional[ForumAuthorResponse] = None
+
     class Config:
         from_attributes = True

@@ -28,12 +28,14 @@ import {
   Ticket,
   Copy,
   ToggleLeft,
-  ToggleRight
+  ToggleRight,
+  MessageSquare
 } from 'lucide-react';
 import { adminAPI } from '../api';
 import ConfigManager from '../components/ConfigManager';
 import SessionMonitor from '../components/SessionMonitor';
 import DatabaseManager from '../components/DatabaseManager';
+import ForumManager from '../components/ForumManager';
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
@@ -76,7 +78,8 @@ const AdminDashboard = () => {
   // Announcement state
   const [announcements, setAnnouncements] = useState([]);
   const [loadingAnn, setLoadingAnn] = useState(false);
-  const [annForm, setAnnForm] = useState({ title:'', content:'', type:'info', is_active:true, expires_at:'' });
+  const emptyAnnForm = { title:'', content:'', type:'info', is_active:true, show_on_login:false, expires_at:'' };
+  const [annForm, setAnnForm] = useState(emptyAnnForm);
   const [editingAnnId, setEditingAnnId] = useState(null);
   const [showAnnForm, setShowAnnForm] = useState(false);
 
@@ -157,7 +160,11 @@ const AdminDashboard = () => {
       toast.error('标题和内容不能为空'); return;
     }
     try {
-      const payload = { ...annForm, expires_at: annForm.expires_at || null };
+      const payload = {
+        ...annForm,
+        is_active: annForm.show_on_login ? true : annForm.is_active,
+        expires_at: annForm.expires_at || null,
+      };
       if (editingAnnId) {
         await adminAPI.updateAnnouncement(editingAnnId, payload);
         toast.success('公告已更新');
@@ -167,7 +174,7 @@ const AdminDashboard = () => {
       }
       setShowAnnForm(false);
       setEditingAnnId(null);
-      setAnnForm({ title:'', content:'', type:'info', is_active:true, expires_at:'' });
+      setAnnForm(emptyAnnForm);
       fetchAnnouncements();
     } catch (err) { toast.error(err.response?.data?.detail || '操作失败'); }
   };
@@ -187,6 +194,7 @@ const AdminDashboard = () => {
     setAnnForm({
       title: ann.title, content: ann.content, type: ann.type,
       is_active: ann.is_active,
+      show_on_login: !!ann.show_on_login,
       expires_at: ann.expires_at ? ann.expires_at.slice(0, 16) : '',
     });
     setEditingAnnId(ann.id);
@@ -494,6 +502,7 @@ const AdminDashboard = () => {
               { key: 'config',    label: '系统配置',   icon: Settings },
               { key: 'coupons',       label: '卡券管理',   icon: Ticket,    onClick: fetchCoupons },
               { key: 'announcements', label: '公告管理',   icon: FileText,  onClick: fetchAnnouncements },
+              { key: 'forum', label: '论坛管理', icon: MessageSquare },
             ].map(({ key, label, icon: Icon, onClick }) => (
               <button
                 key={key}
@@ -1156,7 +1165,7 @@ const AdminDashboard = () => {
                 公告管理
               </h3>
               <button
-                onClick={() => { setShowAnnForm(true); setEditingAnnId(null); setAnnForm({ title:'', content:'', type:'info', is_active:true, expires_at:'' }); }}
+                onClick={() => { setShowAnnForm(true); setEditingAnnId(null); setAnnForm(emptyAnnForm); }}
                 className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
               >
                 <Plus className="w-4 h-4" /> 发布公告
@@ -1196,11 +1205,18 @@ const AdminDashboard = () => {
                         className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none" />
                     </div>
                     <div className="flex items-end pb-0.5">
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input type="checkbox" checked={annForm.is_active} onChange={e => setAnnForm(p => ({...p, is_active: e.target.checked}))}
-                          className="w-4 h-4 rounded" />
-                        <span className="text-sm font-medium text-gray-700">立即启用</span>
-                      </label>
+                      <div className="space-y-2">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input type="checkbox" checked={annForm.is_active} onChange={e => setAnnForm(p => ({...p, is_active: e.target.checked}))}
+                            className="w-4 h-4 rounded" />
+                          <span className="text-sm font-medium text-gray-700">立即启用</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input type="checkbox" checked={annForm.show_on_login} onChange={e => setAnnForm(p => ({...p, show_on_login: e.target.checked, is_active: e.target.checked ? true : p.is_active}))}
+                            className="w-4 h-4 rounded" />
+                          <span className="text-sm font-medium text-gray-700">登录即推送</span>
+                        </label>
+                      </div>
                     </div>
                   </div>
                   <div className="flex gap-3 pt-1">
@@ -1245,6 +1261,7 @@ const AdminDashboard = () => {
                                 : expired
                                 ? <span className="text-xs px-2 py-0.5 bg-orange-100 text-orange-700 rounded-full">已过期</span>
                                 : <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-500 rounded-full">已禁用</span>}
+                              {ann.show_on_login && <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full">登录即推送</span>}
                               <span className="text-xs text-gray-400">{new Date(ann.created_at).toLocaleDateString('zh-CN')}</span>
                               {ann.expires_at && <span className="text-xs text-gray-400">· 有效至 {new Date(ann.expires_at).toLocaleDateString('zh-CN')}</span>}
                             </div>
@@ -1270,6 +1287,10 @@ const AdminDashboard = () => {
               )}
             </div>
           </div>
+        )}
+
+        {activeTab === 'forum' && (
+          <ForumManager />
         )}
       </div>
 

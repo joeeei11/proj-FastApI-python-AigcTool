@@ -13,6 +13,10 @@ from app.models.models import (
     Announcement,
     ChangeLog,
     Coupon,
+    ForumCategory,
+    ForumPost,
+    ForumReport,
+    ForumReply,
     OptimizationSegment,
     OptimizationSession,
     SessionHistory,
@@ -27,6 +31,12 @@ from app.schemas import (
     CouponCreate,
     CouponResponse,
     DatabaseUpdateRequest,
+    ForumCategoryCreate,
+    ForumCategoryResponse,
+    ForumPostResponse,
+    ForumPostUpdate,
+    ForumReportResponse,
+    ForumReportUpdate,
     UserResponse,
     UserUsageUpdate,
 )
@@ -1101,7 +1111,10 @@ async def create_announcement(
     _: str = Depends(get_admin_from_token),
     db: Session = Depends(get_db),
 ) -> Announcement:
-    ann = Announcement(**data.model_dump())
+    payload = data.model_dump()
+    if payload.get("show_on_login"):
+        payload["is_active"] = True
+    ann = Announcement(**payload)
     db.add(ann)
     db.commit()
     db.refresh(ann)
@@ -1118,7 +1131,10 @@ async def update_announcement(
     ann = db.query(Announcement).filter(Announcement.id == ann_id).first()
     if not ann:
         raise HTTPException(status_code=404, detail="公告不存在")
-    for k, v in data.model_dump().items():
+    payload = data.model_dump()
+    if payload.get("show_on_login"):
+        payload["is_active"] = True
+    for k, v in payload.items():
         setattr(ann, k, v)
     ann.updated_at = datetime.utcnow()
     db.commit()
@@ -1152,3 +1168,151 @@ async def delete_announcement(
     db.delete(ann)
     db.commit()
     return {"message": "公告已删除"}
+
+
+# Forum management endpoints
+
+@router.get("/forum/posts", response_model=List[ForumPostResponse])
+async def admin_list_forum_posts(
+    _: str = Depends(get_admin_from_token),
+    db: Session = Depends(get_db),
+) -> List[ForumPost]:
+    return (
+        db.query(ForumPost)
+        .options(joinedload(ForumPost.author), joinedload(ForumPost.category))
+        .order_by(ForumPost.is_pinned.desc(), ForumPost.created_at.desc())
+        .all()
+    )
+
+
+@router.patch("/forum/posts/{post_id}", response_model=ForumPostResponse)
+async def admin_update_forum_post(
+    post_id: int,
+    data: ForumPostUpdate,
+    _: str = Depends(get_admin_from_token),
+    db: Session = Depends(get_db),
+) -> ForumPost:
+    post = db.query(ForumPost).filter(ForumPost.id == post_id).first()
+    if not post:
+        raise HTTPException(status_code=404, detail="帖子不存在")
+    for key, value in data.model_dump(exclude_unset=True).items():
+        setattr(post, key, value)
+    post.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(post)
+    return (
+        db.query(ForumPost)
+        .options(joinedload(ForumPost.author), joinedload(ForumPost.category))
+        .filter(ForumPost.id == post_id)
+        .first()
+    )
+
+
+@router.get("/forum/posts/{post_id}/replies")
+async def admin_list_forum_replies(
+    post_id: int,
+    _: str = Depends(get_admin_from_token),
+    db: Session = Depends(get_db),
+) -> List[Dict[str, Any]]:
+    replies = (
+        db.query(ForumReply)
+        .options(joinedload(ForumReply.author))
+        .filter(ForumReply.post_id == post_id)
+        .order_by(ForumReply.created_at.asc())
+        .all()
+    )
+    return [_model_to_dict(reply) | {"author": _model_to_dict(reply.author) if reply.author else None} for reply in replies]
+
+
+@router.patch("/forum/replies/{reply_id}")
+async def admin_update_forum_reply(
+    reply_id: int,
+    is_deleted: bool,
+    _: str = Depends(get_admin_from_token),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    reply = db.query(ForumReply).filter(ForumReply.id == reply_id).first()
+    if not reply:
+        raise HTTPException(status_code=404, detail="回复不存在")
+    if reply.is_deleted != is_deleted:
+        post = db.query(ForumPost).filter(ForumPost.id == reply.post_id).first()
+        if post:
+            if is_deleted and post.reply_count > 0:
+                post.reply_count -= 1
+            elif not is_deleted:
+                post.reply_count = (post.reply_count or 0) + 1
+    reply.is_deleted = is_deleted
+    reply.updated_at = datetime.utcnow()
+    db.commit()
+    return {"id": reply.id, "is_deleted": reply.is_deleted}
+
+
+@router.get("/forum/reports", response_model=List[ForumReportResponse])
+async def admin_list_forum_reports(
+    _: str = Depends(get_admin_from_token),
+    db: Session = Depends(get_db),
+) -> List[ForumReport]:
+    return (
+        db.query(ForumReport)
+        .options(joinedload(ForumReport.reporter))
+        .order_by(ForumReport.status.asc(), ForumReport.created_at.desc())
+        .all()
+    )
+
+
+@router.patch("/forum/reports/{report_id}", response_model=ForumReportResponse)
+async def admin_update_forum_report(
+    report_id: int,
+    data: ForumReportUpdate,
+    _: str = Depends(get_admin_from_token),
+    db: Session = Depends(get_db),
+) -> ForumReport:
+    report = db.query(ForumReport).filter(ForumReport.id == report_id).first()
+    if not report:
+        raise HTTPException(status_code=404, detail="举报不存在")
+    report.status = data.status
+    report.handled_at = datetime.utcnow()
+    db.commit()
+    db.refresh(report)
+    return report
+
+
+@router.get("/forum/categories", response_model=List[ForumCategoryResponse])
+async def admin_list_forum_categories(
+    _: str = Depends(get_admin_from_token),
+    db: Session = Depends(get_db),
+) -> List[ForumCategory]:
+    return db.query(ForumCategory).order_by(ForumCategory.sort_order.asc(), ForumCategory.id.asc()).all()
+
+
+@router.post("/forum/categories", response_model=ForumCategoryResponse)
+async def admin_create_forum_category(
+    data: ForumCategoryCreate,
+    _: str = Depends(get_admin_from_token),
+    db: Session = Depends(get_db),
+) -> ForumCategory:
+    if db.query(ForumCategory).filter(ForumCategory.name == data.name).first():
+        raise HTTPException(status_code=400, detail="分类名称已存在")
+    category = ForumCategory(**data.model_dump())
+    db.add(category)
+    db.commit()
+    db.refresh(category)
+    return category
+
+
+@router.patch("/forum/categories/{category_id}", response_model=ForumCategoryResponse)
+async def admin_update_forum_category(
+    category_id: int,
+    data: ForumCategoryCreate,
+    _: str = Depends(get_admin_from_token),
+    db: Session = Depends(get_db),
+) -> ForumCategory:
+    category = db.query(ForumCategory).filter(ForumCategory.id == category_id).first()
+    if not category:
+        raise HTTPException(status_code=404, detail="分类不存在")
+    for key, value in data.model_dump().items():
+        setattr(category, key, value)
+    category.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(category)
+    return category

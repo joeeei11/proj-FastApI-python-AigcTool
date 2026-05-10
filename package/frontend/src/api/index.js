@@ -6,6 +6,14 @@ const api = axios.create({
   timeout: 30000,
 });
 
+export function resolveAssetUrl(url) {
+  if (!url) return '';
+  if (/^https?:\/\//i.test(url) || url.startsWith('data:') || url.startsWith('blob:')) {
+    return url;
+  }
+  return url.startsWith('/') ? url : `/${url}`;
+}
+
 // 请求拦截器：从内存读取 token（刷新即清空，不持久化）
 api.interceptors.request.use(
   (config) => {
@@ -30,6 +38,30 @@ api.interceptors.response.use(
     return Promise.reject(error);
   }
 );
+
+export function formatApiError(error, fallback = '操作失败') {
+  const detail = error?.response?.data?.detail;
+
+  if (Array.isArray(detail)) {
+    return detail
+      .map((item) => {
+        if (typeof item === 'string') return item;
+        const loc = Array.isArray(item?.loc)
+          ? item.loc.filter((part) => part !== 'body').join('.')
+          : '';
+        if (item?.msg) return loc ? `${loc}: ${item.msg}` : item.msg;
+        return null;
+      })
+      .filter(Boolean)
+      .join('；') || fallback;
+  }
+
+  if (detail && typeof detail === 'object') {
+    return detail.message || detail.msg || fallback;
+  }
+
+  return detail || error?.message || fallback;
+}
 
 // Auth API
 export const authAPI = {
@@ -72,6 +104,15 @@ export const adminAPI = {
   updateAnnouncement: (id, data) => adminAxios.put(`/admin/announcements/${id}`, data),
   toggleAnnouncement: (id) => adminAxios.patch(`/admin/announcements/${id}/toggle`),
   deleteAnnouncement: (id) => adminAxios.delete(`/admin/announcements/${id}`),
+  listForumPosts: () => adminAxios.get('/admin/forum/posts'),
+  updateForumPost: (id, data) => adminAxios.patch(`/admin/forum/posts/${id}`, data),
+  listForumReplies: (id) => adminAxios.get(`/admin/forum/posts/${id}/replies`),
+  updateForumReply: (id, isDeleted) => adminAxios.patch(`/admin/forum/replies/${id}`, null, { params: { is_deleted: isDeleted } }),
+  listForumReports: () => adminAxios.get('/admin/forum/reports'),
+  updateForumReport: (id, data) => adminAxios.patch(`/admin/forum/reports/${id}`, data),
+  listForumCategories: () => adminAxios.get('/admin/forum/categories'),
+  createForumCategory: (data) => adminAxios.post('/admin/forum/categories', data),
+  updateForumCategory: (id, data) => adminAxios.patch(`/admin/forum/categories/${id}`, data),
   getConfig: () => adminAxios.get('/admin/config'),
   updateConfig: (data) => adminAxios.post('/admin/config', data),
   // 卡券管理
@@ -129,6 +170,34 @@ export const optimizationAPI = {
   },
 };
 
+// Announcement API
+export const announcementAPI = {
+  listActive: (params = {}) => api.get('/announcements', { params }),
+  listLoginPush: () => api.get('/announcements', { params: { login_push_only: true } }),
+};
+
+// Forum API
+export const forumAPI = {
+  listCategories: () => api.get('/forum/categories'),
+  listPosts: (params = {}) => api.get('/forum/posts', { params }),
+  createPost: (data) => api.post('/forum/posts', data),
+  uploadImage: (file) => {
+    const form = new FormData();
+    form.append('file', file);
+    return api.post('/forum/upload-image', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 30000,
+    });
+  },
+  getPost: (postId) => api.get(`/forum/posts/${postId}`),
+  deletePost: (postId) => api.delete(`/forum/posts/${postId}`),
+  solvePost: (postId) => api.patch(`/forum/posts/${postId}/solve`),
+  listReplies: (postId) => api.get(`/forum/posts/${postId}/replies`),
+  createReply: (postId, data) => api.post(`/forum/posts/${postId}/replies`, data),
+  deleteReply: (replyId) => api.delete(`/forum/replies/${replyId}`),
+  report: (data) => api.post('/forum/reports', data),
+};
+
 // Health API
 export const healthAPI = {
   checkModels: () => api.get('/health/models', { timeout: 15000 }),
@@ -158,9 +227,14 @@ export const wordFormatterAPI = {
   formatFile: (file, options = {}) => {
     const formData = new FormData();
     formData.append('file', file);
+    // spec_json can be large; send as form field to avoid 414
+    if (options.spec_json) {
+      formData.append('custom_spec_json', options.spec_json);
+    }
+    const { spec_json, ...urlParams } = options;
     return api.post('/word-formatter/format/file', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
-      params: options,
+      params: urlParams,
       timeout: 120000,
     });
   },

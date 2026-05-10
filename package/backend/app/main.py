@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Request, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 import os
 import sys
@@ -10,10 +11,11 @@ from typing import Dict, Tuple, Optional
 
 # 先导入 config 以便加载环境变量
 from app.config import settings
-from app.database import init_db
+from app.database import init_db, seed_forum_categories
 from app.routes import admin, prompts, optimization
 from app.routes.auth import router as auth_router
 from app.routes.announcements import router as announcements_router
+from app.routes.forum import router as forum_router
 from app.routes.image import router as image_router
 from app.word_formatter import router as word_formatter_router
 from app.word_formatter.services import get_job_manager
@@ -92,6 +94,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+uploads_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "uploads")
+os.makedirs(uploads_dir, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=uploads_dir), name="uploads")
+
 # 注册路由（添加 /api 前缀，与 backend/app/main.py 保持一致）
 app.include_router(auth_router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
@@ -99,6 +105,7 @@ app.include_router(prompts.router, prefix="/api")
 app.include_router(optimization.router, prefix="/api")
 app.include_router(word_formatter_router, prefix="/api")
 app.include_router(announcements_router, prefix="/api")
+app.include_router(forum_router, prefix="/api")
 app.include_router(image_router, prefix="/api")
 
 # 速率限制中间件已移除
@@ -109,6 +116,7 @@ async def startup_event():
     """启动时初始化"""
     # 初始化数据库
     init_db()
+    seed_forum_categories()
 
     # 创建系统默认提示词
     db = SessionLocal()
